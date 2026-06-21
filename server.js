@@ -25,8 +25,24 @@ Deno.serve(async (_req) => {
 
         // previousWordの末尾とnextWordの先頭が同一か確認
         if (previousWord.slice(-1) === nextWord.slice(0, 1)) {
-            // 同一であれば、previousWordを更新
-            previousWord = nextWord;
+            //末尾が「ん」になっている場合エラー吐く
+            if (nextWord.slice(-1) === "ん") {
+                return new Response(
+                    JSON.stringify({
+                        "errorMessage": "末尾が「ん」で終わっています",
+                        "errorCode": "10002",
+                    }),
+                    {
+                        status: 500,
+                        headers: {
+                            "Content-Type": "application/json; charset=utf-8",
+                        },
+                    },
+                );
+            } else {
+                // 同一であれば、previousWordを更新
+                previousWord = nextWord;
+            }
         } // 同一でない単語の入力時に、エラーを返す
         else {
             return new Response(

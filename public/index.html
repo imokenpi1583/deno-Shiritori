@@ -52,7 +52,12 @@
             if (response.status !== 200) {
                 const errorJson = await response.text();
                 const errorObj = JSON.parse(errorJson);
-                alert(errorObj["errorMessage"]);
+                if (errorObj["errorCode"] === 10002) {
+                    window.location.href = "end.html";
+                }
+                else {
+                    alert(errorObj["errorMessage"]);
+                }
                 return;
             }
             const previousWord = await response.text();
