@@ -21,7 +21,8 @@
 
     <script>
         //WebSocketサーバーに接続する
-        const socket = new WebSocket(`ws://${window.location.host}/shiritori-ws`);
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const socket = new WebSocket(`${protocol}//${window.location.host}/shiritori-ws`);
         const paragraph = document.querySelector("#previousWord");
         const nextWordInput = document.querySelector("#nextWordInput");
 
