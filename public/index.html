@@ -20,6 +20,40 @@
     <!-- JavaScriptを実行 -->
 
     <script>
+        //WebSocketサーバーに接続する
+        const socket = new WebSocket(`ws://${window.location.host}/shiritori-ws`);
+        const paragraph = document.querySelector("#previousWord");
+        const nextWordInput = document.querySelector("#nextWordInput");
+
+        //サーバーからメッセージ（誰かが送信した単語）が届いたときの処理
+        // サーバーからメッセージ（JSON）が届いたときの処理
+        socket.onmessage = async (event) => {
+            // 届いたJSON文字列をオブジェクトに変換
+            const data = JSON.parse(event.data);
+
+            //正常に進んでいる場合
+            if (data.type === "success") {
+                paragraph.innerHTML = `前の単語: ${data.word}`;
+                nextWordInput.value = "";
+            }
+            //誰かがミスしてゲームオーバーになった場合
+            else if (data.type === "gameover") {
+                const msg = encodeURIComponent(data.errorMessage);
+                // 全員同時に end.html へ強制連行！
+                window.location.href = `end.html?msg=${msg}`;
+            }
+        };
+
+        //送信ボタンの押下時に実行
+        document.querySelector("#nextWordSendButton").onclick = () => {
+            const nextWordInputText = nextWordInput.value;
+
+            if (!nextWordInputText) return; // 空文字なら何もしない
+
+            socket.send(nextWordInputText);
+        };
+
+        // 最初にページを開いたときに最新の単語を取得する処理
         window.onload = async (event) => {
             // GET /shiritoriを実行
             const response = await fetch("/shiritori", { method: "GET" });
@@ -29,45 +63,6 @@
             const paragraph = document.querySelector("#previousWord");
             // 取得したタグの中身を書き換える
             paragraph.innerHTML = `前の単語: ${previousWord}`;
-        }
-
-        // 送信ボタンの押下時に実行
-        document.querySelector("#nextWordSendButton").onclick = async (event) => {
-            // inputタグを取得
-            const nextWordInput = document.querySelector("#nextWordInput");
-            // inputの中身を取得
-            const nextWordInputText = nextWordInput.value;
-            // POST /shiritoriを実行
-            // 次の単語をresponseに格納
-            const response = await fetch(
-                "/shiritori",
-                {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ nextWord: nextWordInputText })
-                }
-            );
-
-            // status: 200以外が返ってきた場合にエラーを表示
-            if (response.status !== 200) {
-                const errorJson = await response.text();
-                const errorObj = JSON.parse(errorJson);
-                if (errorObj["errorCode"] === "10002" || errorObj["errorCode"] === "10003") {
-                    const msg = encodeURIComponent(errorObj["errorMessage"]);
-                    window.location.href = `end.html?msg=${msg}`;
-                }
-                else {
-                    alert(errorObj["errorMessage"]);
-                }
-                return;
-            }
-            const previousWord = await response.text();
-            // id: previousWordのタグを取得
-            const paragraph = document.querySelector("#previousWord");
-            // 取得したタグの中身を書き換える
-            paragraph.innerHTML = `前の単語: ${previousWord}`;
-            // inputタグの中身を消去する
-            nextWordInput.value = "";
         }
 
     </script>

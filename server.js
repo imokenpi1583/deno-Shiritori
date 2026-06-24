@@ -4,80 +4,92 @@ import { serveDir } from "jsr:@std/http/file-server";
 //直前の単語を保持しておく
 let wordHistory = ["しりとり"];
 
+const connectedClients = new Set();
+
+// 全員にJSONデータを送るヘルパー関数
+function broadcast(data) {
+    const messageString = JSON.stringify(data);
+    for (const client of connectedClients) {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(messageString);
+        }
+    }
+}
+
 // localhostにDenoのHTTPサーバーを展開
 Deno.serve(async (_req) => {
     // パス名を取得する
     // http://localhost:8000/hoge に接続した場合"/hoge"が取得できる
     const pathname = new URL(_req.url).pathname;
+
+    if (pathname === "/shiritori-ws") {
+        const { response, socket } = Deno.upgradeWebSocket(_req);
+
+        socket.onopen = () => {
+            console.log("プレイヤー参戦！");
+            connectedClients.add(socket);
+        };
+
+        socket.onclose = () => {
+            console.log("プレイヤー退場ッ！");
+            connectedClients.delete(socket); // リストから削除
+        };
+
+        socket.onmessage = (event) => {
+            const nextWord = event.data; // フロントから届いた単語
+            const previousWord = wordHistory[wordHistory.length - 1];
+
+            //重複チェック
+            if (wordHistory.includes(nextWord)) {
+                broadcast({
+                    "type": "gameover",
+                    "errorCode": "10003",
+                    "errorMessage": `「${nextWord}」はすでに使われています！`,
+                });
+                return;
+            }
+
+            //しりとり接続チェック
+            if (previousWord.slice(-1) !== nextWord.slice(0, 1)) {
+                broadcast({
+                    "type": "gameover",
+                    "errorCode": "10001",
+                    "errorMessage": `「${nextWord}」は「${
+                        previousWord.slice(-1)
+                    }」に続いていません！`,
+                });
+                return;
+            }
+
+            //「ん」チェック
+            if (nextWord.slice(-1) === "ん") {
+                broadcast({
+                    "type": "gameover",
+                    "errorCode": "10002",
+                    "errorMessage": `末尾が「ん」で終わっています！`,
+                });
+                return;
+            }
+
+            // すべてのチェックをクリアしたら履歴に追加
+            wordHistory.push(nextWord);
+
+            // 全員に新しい単語を通知
+            broadcast({
+                "type": "success",
+                "word": nextWord,
+            });
+        };
+
+        return response;
+    }
+
     console.log(`pathname: ${pathname}`);
 
     // GET /shiritori: 直前の単語を返す
     if (_req.method === "GET" && pathname === "/shiritori") {
         const previousWord = wordHistory[wordHistory.length - 1];
         return new Response(previousWord);
-    }
-
-    // POST /shiritori: 次の単語を受け取って保存する
-    if (_req.method === "POST" && pathname === "/shiritori") {
-        // リクエストのペイロードを取得
-        const requestJson = await _req.json();
-        // JSONの中からnextWordを取得
-        const nextWord = requestJson["nextWord"];
-
-        const previousWord = wordHistory[wordHistory.length - 1];
-        //使われた単語か確認
-        if (wordHistory.includes(nextWord)) {
-            return new Response(
-                JSON.stringify({
-                    "errorMessage": `「${nextWord}」はすでに使われています！`,
-                    "errorCode": "10003",
-                }),
-                {
-                    status: 400,
-                    headers: {
-                        "Content-Type": "application/json; charset=utf-8",
-                    },
-                },
-            );
-        }
-
-        // previousWordの末尾とnextWordの先頭が同一か確認
-        if (previousWord.slice(-1) === nextWord.slice(0, 1)) {
-            //末尾が「ん」になっている場合エラー吐く
-            if (nextWord.slice(-1) === "ん") {
-                return new Response(
-                    JSON.stringify({
-                        "errorMessage": "末尾が「ん」で終わっています",
-                        "errorCode": "10002",
-                    }),
-                    {
-                        status: 500,
-                        headers: {
-                            "Content-Type": "application/json; charset=utf-8",
-                        },
-                    },
-                );
-            }
-            // 同一であれば、previousWordを更新
-            wordHistory.push(nextWord);
-        } // 同一でない単語の入力時に、エラーを返す
-        else {
-            return new Response(
-                JSON.stringify({
-                    "errorMessage": "前の単語に続いていません",
-                    "errorCode": "10001",
-                }),
-                {
-                    status: 400,
-                    headers: {
-                        "Content-Type": "application/json; charset=utf-8",
-                    },
-                },
-            );
-        }
-
-        // 現在の単語を返す
-        return new Response(nextWord);
     }
 
     if (_req.method === "POST" && pathname === "/reset") {
