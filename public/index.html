@@ -47,10 +47,20 @@
 
         //送信ボタンの押下時に実行
         document.querySelector("#nextWordSendButton").onclick = () => {
-            const nextWordInputText = nextWordInput.value;
+            const nextWordInputText = nextWordInput.value.trim(); // 前後の余計な空白を消す
 
-            if (!nextWordInputText) return; // 空文字なら何もしない
+            //ひらがな・カタカナ・長音記号「だけ」の正規表現
+            const regex = /^[ぁ-んァ-ヶー]+$/;
 
+            // もし入力が空、または正規表現にマッチしなかったら弾く
+            if (!nextWordInputText) return;
+
+            if (!regex.test(nextWordInputText)) {
+                alert("ひらがな、またはカタカナだけで入力してください！(スペースや記号は使えません)");
+                return; // ここで処理を終了して、サーバーには送らない
+            }
+
+            // 問題なければWebSocketで送信
             socket.send(nextWordInputText);
         };
 

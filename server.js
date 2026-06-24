@@ -36,10 +36,21 @@ Deno.serve(async (_req) => {
         };
 
         socket.onmessage = (event) => {
-            const nextWord = event.data; // フロントから届いた単語
+            const nextWord = event.data.trim();
             const previousWord = wordHistory[wordHistory.length - 1];
 
-            //重複チェック
+            //サーバー側でひらがな・カタカナ・長音チェック
+            const regex = /^[ぁ-んァ-ヶー]+$/;
+            if (!regex.test(nextWord)) {
+                broadcast({
+                    "type": "gameover",
+                    "errorCode": "10004", // 新しいエラーコード
+                    "errorMessage":
+                        "ひらがな・カタカナ以外の不正な文字（記号や空白など）が入力されました！",
+                });
+                return;
+            }
+
             if (wordHistory.includes(nextWord)) {
                 broadcast({
                     "type": "gameover",
@@ -49,14 +60,46 @@ Deno.serve(async (_req) => {
                 return;
             }
 
+            const rawPreviousWord = wordHistory[wordHistory.length - 1];
+
+            const toHiragana = (str) => {
+                return str.replace(/[\u30a1-\u30f6]/g, (match) => {
+                    return String.fromCharCode(match.charCodeAt(0) - 0x60);
+                });
+            };
+
+            const nextStart = toHiragana(nextWord.slice(0, 1));
+
+            let lastChar = rawPreviousWord.slice(-1);
+
+            if (lastChar === "ー" && rawPreviousWord.length > 1) {
+                lastChar = rawPreviousWord.slice(-2, -1);
+            }
+
+            let previousEnd = toHiragana(lastChar);
+
+            const smallToLarge = {
+                "ぁ": "あ",
+                "ぃ": "い",
+                "ぅ": "う",
+                "ぇ": "え",
+                "ぉ": "お",
+                "ゃ": "や",
+                "ゅ": "ゆ",
+                "ょ": "よ",
+                "っ": "つ",
+            };
+            if (smallToLarge[previousEnd]) {
+                previousEnd = smallToLarge[previousEnd]; // 「ぁ」から「あ」に化けさせる
+            }
+
             //しりとり接続チェック
-            if (previousWord.slice(-1) !== nextWord.slice(0, 1)) {
+            if (previousEnd !== nextStart) {
                 broadcast({
                     "type": "gameover",
                     "errorCode": "10001",
-                    "errorMessage": `「${nextWord}」は「${
-                        previousWord.slice(-1)
-                    }」に続いていません！`,
+                    "errorMessage":
+                        `「${nextWord}」は「${previousEnd}」に続いていません！`,
                 });
                 return;
             }
