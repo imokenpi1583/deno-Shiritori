@@ -2,7 +2,7 @@
 import { serveDir } from "jsr:@std/http/file-server";
 
 //直前の単語を保持しておく
-let previousWord = "しりとり";
+let wordHistory = ["しりとり"];
 
 // localhostにDenoのHTTPサーバーを展開
 Deno.serve(async (_req) => {
@@ -13,6 +13,7 @@ Deno.serve(async (_req) => {
 
     // GET /shiritori: 直前の単語を返す
     if (_req.method === "GET" && pathname === "/shiritori") {
+        const previousWord = wordHistory[wordHistory.length - 1];
         return new Response(previousWord);
     }
 
@@ -22,6 +23,23 @@ Deno.serve(async (_req) => {
         const requestJson = await _req.json();
         // JSONの中からnextWordを取得
         const nextWord = requestJson["nextWord"];
+
+        const previousWord = wordHistory[wordHistory.length - 1];
+        //使われた単語か確認
+        if (wordHistory.includes(nextWord)) {
+            return new Response(
+                JSON.stringify({
+                    "errorMessage": `「${nextWord}」はすでに使われています！`,
+                    "errorCode": "10003",
+                }),
+                {
+                    status: 400,
+                    headers: {
+                        "Content-Type": "application/json; charset=utf-8",
+                    },
+                },
+            );
+        }
 
         // previousWordの末尾とnextWordの先頭が同一か確認
         if (previousWord.slice(-1) === nextWord.slice(0, 1)) {
@@ -39,10 +57,9 @@ Deno.serve(async (_req) => {
                         },
                     },
                 );
-            } else {
-                // 同一であれば、previousWordを更新
-                previousWord = nextWord;
             }
+            // 同一であれば、previousWordを更新
+            wordHistory.push(nextWord);
         } // 同一でない単語の入力時に、エラーを返す
         else {
             return new Response(
@@ -60,7 +77,18 @@ Deno.serve(async (_req) => {
         }
 
         // 現在の単語を返す
-        return new Response(previousWord);
+        return new Response(nextWord);
+    }
+
+    if (_req.method === "POST" && pathname === "/reset") {
+        // 履歴を最初の「しりとり」だけの状態に戻す
+        wordHistory = ["しりとり"];
+
+        console.log("履歴がリセットされました");
+        return new Response(JSON.stringify({ "message": "リセット完了" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json; charset=utf-8" },
+        });
     }
 
     // ./public以下のファイルを公開

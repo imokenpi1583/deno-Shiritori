@@ -52,8 +52,9 @@
             if (response.status !== 200) {
                 const errorJson = await response.text();
                 const errorObj = JSON.parse(errorJson);
-                if (errorObj["errorCode"] === 10002) {
-                    window.location.href = "end.html";
+                if (errorObj["errorCode"] === "10002" || errorObj["errorCode"] === "10003") {
+                    const msg = encodeURIComponent(errorObj["errorMessage"]);
+                    window.location.href = `end.html?msg=${msg}`;
                 }
                 else {
                     alert(errorObj["errorMessage"]);
