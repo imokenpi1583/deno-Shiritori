@@ -3,17 +3,23 @@ import { serveDir } from "jsr:@std/http/file-server";
 
 //直前の単語を保持しておく
 let wordHistory = ["しりとり"];
-
-const connectedClients = new Set();
+let connectedClients = [];
+let turnIndex = 0; // 現在何番目のプレイヤーのターンか（0または1）
 
 // 全員にJSONデータを送るヘルパー関数
 function broadcast(data) {
-    const messageString = JSON.stringify(data);
-    for (const client of connectedClients) {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(messageString);
+    connectedClients.forEach((clients, index) => {
+        if (clients.readyState === WebSocket.OPEN) {
+            const isYourTurn = index === turnIndex;
+
+            const personallizedData = {
+                ...data,
+                isYourTurn: isYourTurn,
+            };
+
+            clients.send(JSON.stringify(personallizedData));
         }
-    }
+    });
 }
 
 // localhostにDenoのHTTPサーバーを展開
@@ -27,56 +33,30 @@ Deno.serve(async (_req) => {
 
         socket.onopen = () => {
             console.log("プレイヤー参戦！");
-            connectedClients.add(socket);
+            connectedClients.push(socket);
         };
 
         socket.onclose = () => {
             console.log("プレイヤー退場ッ！");
-            connectedClients.delete(socket); // リストから削除
+            connectedClients = connectedClients.filter((client) =>
+                client !== socket
+            );
+
+            turnIndex = 0;
         };
 
+        //
         socket.onmessage = (event) => {
-            const data = JSON.parse(event.data);
-
-            if (data.type === "success") {
-                const historyContainer = document.querySelector(
-                    "#historyContainer",
-                );
-                const currentCircle = document.querySelector("#currentCircle");
-
-                // 1. 🔴 左側の履歴表示（5単語分）を組み立てる
-                // 例: 「しりとり ➔ りんご ➔ 」という文字列を作る
-                historyContainer.innerHTML = data.recentWords
-                    .map((word) => `<span class="history-word">${word}</span>`)
-                    .join('<span class="arrow">➔</span>');
-
-                // 2. 🔴 真ん中の丸の中に、最新の単語の「最後の1文字」を表示する
-                const lastChar = data.word.slice(-1);
-                currentCircle.textContent = lastChar;
-
-                // 3. 入力欄をクリア
-                nextWordInput.value = "";
-
-                // 💡 ここにターンの切り替えロジック（後述）を入れると「相手のターン」に変えられます
-            } else if (data.type === "gameover") {
-                const msg = encodeURIComponent(data.errorMessage);
-                window.location.href = `end.html?msg=${msg}`;
+            // 1. 手番プレイヤーからの送信かチェック
+            const currentPlayerSocket = connectedClients[turnIndex];
+            if (socket !== currentPlayerSocket) {
+                // 自分のターンじゃない奴からのメッセージは無視する
+                return;
             }
 
             const nextWord = event.data.trim();
 
-            //サーバー側でひらがな・カタカナ・長音チェック
-            const regex = /^[ぁ-んァ-ヶー]+$/;
-            if (!regex.test(nextWord)) {
-                broadcast({
-                    "type": "gameover",
-                    "errorCode": "10004", // 新しいエラーコード
-                    "errorMessage":
-                        "ひらがな・カタカナ以外の不正な文字（記号や空白など）が入力されました！",
-                });
-                return;
-            }
-
+            // 重複チェック
             if (wordHistory.includes(nextWord)) {
                 broadcast({
                     "type": "gameover",
@@ -86,8 +66,8 @@ Deno.serve(async (_req) => {
                 return;
             }
 
+            // 文字の正規化（標準化）処理
             const rawPreviousWord = wordHistory[wordHistory.length - 1];
-
             const toHiragana = (str) => {
                 return str.replace(/[\u30a1-\u30f6]/g, (match) => {
                     return String.fromCharCode(match.charCodeAt(0) - 0x60);
@@ -95,7 +75,6 @@ Deno.serve(async (_req) => {
             };
 
             const nextStart = toHiragana(nextWord.slice(0, 1));
-
             let lastChar = rawPreviousWord.slice(-1);
 
             if (lastChar === "ー" && rawPreviousWord.length > 1) {
@@ -116,10 +95,10 @@ Deno.serve(async (_req) => {
                 "っ": "つ",
             };
             if (smallToLarge[previousEnd]) {
-                previousEnd = smallToLarge[previousEnd]; // 「ぁ」から「あ」に化けさせる
+                previousEnd = smallToLarge[previousEnd];
             }
 
-            //しりとり接続チェック
+            // しりとり接続チェック
             if (previousEnd !== nextStart) {
                 broadcast({
                     "type": "gameover",
@@ -130,8 +109,8 @@ Deno.serve(async (_req) => {
                 return;
             }
 
-            //「ん」チェック
-            if (nextWord.slice(-1) === "ん") {
+            // 「ん」チェック
+            if (toHiragana(nextWord.slice(-1)) === "ん") {
                 broadcast({
                     "type": "gameover",
                     "errorCode": "10002",
@@ -140,13 +119,26 @@ Deno.serve(async (_req) => {
                 return;
             }
 
-            // すべてのチェックをクリアしたら履歴に追加
+            // 全てのチェックをクリアしたら履歴に追加
             wordHistory.push(nextWord);
+            const recentWords = wordHistory.slice(-5);
 
-            // 全員に新しい単語を通知
+            // 2. 次のプレイヤーにターンを譲る
+            // 2人対戦なら 0 ➔ 1 ➔ 0 ➔ 1 と交互に入れ替わる
+            turnIndex = (turnIndex + 1) % connectedClients.length;
+
+            // 全員に通知（進化したbroadcastを呼ぶ）
             broadcast({
                 "type": "success",
                 "word": nextWord,
+                "recentWords": recentWords,
+            });
+
+            //正しいJSONデータ形式で全員に一斉送信！
+            broadcast({
+                "type": "success",
+                "word": nextWord,
+                "recentWords": recentWords,
             });
         };
 

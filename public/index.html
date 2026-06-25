@@ -40,8 +40,32 @@
 
             //正常に進んでいる場合
             if (data.type === "success") {
-                paragraph.innerHTML = `前の単語: ${data.word}`;
+                const historyContainer = document.querySelector("#historyContainer");
+                const currentCircle = document.querySelector("#currentCircle");
+                const turnIndicator = document.querySelector("#turnIndicator");
+                const sendButton = document.querySelector("#nextWordSendButton")
+
+                historyContainer.innerHTML = data.recentWords
+                    .map(word => `<span class="history-word">${word}</span>`)
+                    .join('<span class="arrow">➔</span>');
+
+                let lastChar = data.word.slice(-1);
+                if (lastChar === "ー" && data.word.length > 1) {
+                    lastChar = data.word.slice(-2, -1);
+                }
+                currentCircle.textContent = lastChar;
+
                 nextWordInput.value = "";
+
+                if (data.isYourTurn) {
+                    turnIndicator.textContent = "自分のターン";
+                    sendButton.disabled = false;
+                    nextWordInput.disabled = false;
+                } else {
+                    turnIndicator.textContent = "相手のターン(考え中...)";
+                    sendButton.disabled = true;
+                    nextWordInput.disabled = true;
+                }
             }
             //誰かがミスしてゲームオーバーになった場合
             else if (data.type === "gameover") {
