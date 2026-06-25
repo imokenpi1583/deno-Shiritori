@@ -13,7 +13,13 @@
     <!-- bodyタグの中には実際に表示するものなどを書く -->
     <h1>しりとり</h1>
     <!-- 現在の単語を表示する場所 -->
-    <p id="previousWord"></p>
+    <div class="game-area">
+        <div id="historyContainer"></div>
+
+        <div id="currentCircle">り</div>
+    </div>
+
+    <p id="turnIndicator">自分のターン</p>
     <!-- 次の文字を入力するフォーム -->
     <input id="nextWordInput" type="text" />
     <button id="nextWordSendButton">送信</button>
@@ -68,12 +74,22 @@
         window.onload = async (event) => {
             // GET /shiritoriを実行
             const response = await fetch("/shiritori", { method: "GET" });
-            // responseの中からレスポンスのテキストデータを取得
-            const previousWord = await response.text();
-            // id: previousWordのタグを取得
-            const paragraph = document.querySelector("#previousWord");
-            // 取得したタグの中身を書き換える
-            paragraph.innerHTML = `前の単語: ${previousWord}`;
+            if (response.ok) {
+                //JSONとして受け取る
+                const data = await response.json();
+
+                const historyContainer = document.querySelector("#historyContainer");
+                const currentCircle = document.querySelector("#currentCircle");
+
+                // 過去5件の履歴を表示
+                historyContainer.innerHTML = data.recentWords
+                    .map(word => `<span class="history-word">${word}</span>`)
+                    .join('<span class="arrow">➔</span>');
+
+                // 最新の1文字を丸の中に表示
+                const lastChar = data.word.slice(-1);
+                currentCircle.textContent = lastChar;
+            }
         }
 
     </script>

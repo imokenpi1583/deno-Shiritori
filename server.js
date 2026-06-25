@@ -36,8 +36,34 @@ Deno.serve(async (_req) => {
         };
 
         socket.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+
+            if (data.type === "success") {
+                const historyContainer = document.querySelector(
+                    "#historyContainer",
+                );
+                const currentCircle = document.querySelector("#currentCircle");
+
+                // 1. 🔴 左側の履歴表示（5単語分）を組み立てる
+                // 例: 「しりとり ➔ りんご ➔ 」という文字列を作る
+                historyContainer.innerHTML = data.recentWords
+                    .map((word) => `<span class="history-word">${word}</span>`)
+                    .join('<span class="arrow">➔</span>');
+
+                // 2. 🔴 真ん中の丸の中に、最新の単語の「最後の1文字」を表示する
+                const lastChar = data.word.slice(-1);
+                currentCircle.textContent = lastChar;
+
+                // 3. 入力欄をクリア
+                nextWordInput.value = "";
+
+                // 💡 ここにターンの切り替えロジック（後述）を入れると「相手のターン」に変えられます
+            } else if (data.type === "gameover") {
+                const msg = encodeURIComponent(data.errorMessage);
+                window.location.href = `end.html?msg=${msg}`;
+            }
+
             const nextWord = event.data.trim();
-            const previousWord = wordHistory[wordHistory.length - 1];
 
             //サーバー側でひらがな・カタカナ・長音チェック
             const regex = /^[ぁ-んァ-ヶー]+$/;
@@ -131,8 +157,20 @@ Deno.serve(async (_req) => {
 
     // GET /shiritori: 直前の単語を返す
     if (_req.method === "GET" && pathname === "/shiritori") {
-        const previousWord = wordHistory[wordHistory.length - 1];
-        return new Response(previousWord);
+        const nextWord = wordHistory[wordHistory.length - 1];
+        const recentWords = wordHistory.slice(-5); // 最初も過去5件を切り出す
+
+        // WebSocketの成功時と同じ形のJSONデータを返すようにする
+        return new Response(
+            JSON.stringify({
+                "type": "success",
+                "word": nextWord,
+                "recentWords": recentWords,
+            }),
+            {
+                headers: { "Content-Type": "application/json; charset=utf-8" },
+            },
+        );
     }
 
     if (_req.method === "POST" && pathname === "/reset") {
