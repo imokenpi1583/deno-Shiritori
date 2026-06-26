@@ -42,7 +42,7 @@
             const turnIndicator = document.querySelector("#turnIndicator");
             const sendButton = document.querySelector("#nextWordSendButton");
 
-            // 🔴 1. 待機中の通知が来た場合
+            //待機中の通知が来た場合
             if (data.type === "waiting") {
                 turnIndicator.textContent = data.message;
                 sendButton.disabled = true;     // ボタンをロック
@@ -79,7 +79,13 @@
             //ゲームオーバーの場合
             else if (data.type === "gameover") {
                 const msg = encodeURIComponent(data.errorMessage);
-                window.location.href = `end.html?msg=${msg}`;
+
+                // 🔴 自分が勝ったか負けたかで、遷移するファイルを分ける！
+                if (data.result === "win") {
+                    window.location.href = `win.html?msg=${msg}`;
+                } else {
+                    window.location.href = `lose.html?msg=${msg}`;
+                }
             }
         };
 

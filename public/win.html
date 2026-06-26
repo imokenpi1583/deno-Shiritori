@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <title>VICTORY!</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+
+<body style="background-color: #e6f7ff; text-align: center; padding-top: 50px;">
+  <h1 style="color: #1890ff; font-size: 64px; margin-bottom: 20px;">かち^^</h1>
+  <p id="message" style="font-size: 24px; color: #333;"></p>
+  <br>
+  <button id="resetButton">再接続</button>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const msg = urlParams.get('msg');
+    if (msg) {
+      document.querySelector("#message").textContent = msg;
+    }
+    document.querySelector("#resetButton").onclick = async () => {
+      // サーバーにリセットを要求
+      const response = await fetch("/reset", { method: "POST" });
+
+      if (response.ok) {
+        // サーバー側のリセットが成功したら、メイン画面に戻る
+        window.location.href = "index.html";
+      } else {
+        alert("リセットに失敗しました");
+      }
+    };
+  </script>
+</body>
+
+</html>

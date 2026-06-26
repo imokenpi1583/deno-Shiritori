@@ -79,12 +79,11 @@ Deno.serve(async (_req) => {
                 connectedClients[0].send(JSON.stringify({
                     "type": "waiting",
                     "message":
-                        "対戦相手が切断しました。新たな相手を待っています...",
+                        "対戦相手が切断しました;;新たな相手を待っています...",
                 }));
             }
         };
 
-        //
         socket.onmessage = (event) => {
             // 1. 手番プレイヤーからの送信かチェック
             const currentPlayerSocket = connectedClients[turnIndex];
@@ -97,10 +96,26 @@ Deno.serve(async (_req) => {
 
             // 重複チェック
             if (wordHistory.includes(nextWord)) {
-                broadcast({
+                //敗者に送る
+                socket.send(JSON.stringify({
                     "type": "gameover",
-                    "errorCode": "10003",
+                    "result": "lose",
                     "errorMessage": `「${nextWord}」はすでに使われています！`,
+                }));
+
+                //勝者に送る
+                connectedClients.forEach((client) => {
+                    if (
+                        client !== socket &&
+                        client.readyState === WebSocket.OPEN
+                    ) {
+                        client.send(JSON.stringify({
+                            "type": "gameover",
+                            "result": "win",
+                            "errorMessage":
+                                `相手が「${nextWord}」という重複した単語を使いました！`,
+                        }));
+                    }
                 });
                 return;
             }
@@ -139,21 +154,53 @@ Deno.serve(async (_req) => {
 
             // しりとり接続チェック
             if (previousEnd !== nextStart) {
-                broadcast({
+                //敗者に送る
+                socket.send(JSON.stringify({
                     "type": "gameover",
-                    "errorCode": "10001",
+                    "result": "lose",
                     "errorMessage":
                         `「${nextWord}」は「${previousEnd}」に続いていません！`,
+                }));
+
+                //勝者に送る
+                connectedClients.forEach((client) => {
+                    if (
+                        client !== socket &&
+                        client.readyState === WebSocket.OPEN
+                    ) {
+                        client.send(JSON.stringify({
+                            "type": "gameover",
+                            "result": "win",
+                            "errorMessage":
+                                `相手が「${previousEnd}」に続かない単語を入力しました！`,
+                        }));
+                    }
                 });
                 return;
             }
 
             // 「ん」チェック
             if (toHiragana(nextWord.slice(-1)) === "ん") {
-                broadcast({
+                //敗者に送る
+                socket.send(JSON.stringify({
                     "type": "gameover",
-                    "errorCode": "10002",
+                    "result": "lose",
                     "errorMessage": `末尾が「ん」で終わっています！`,
+                }));
+
+                //勝者に送る
+                connectedClients.forEach((client) => {
+                    if (
+                        client !== socket &&
+                        client.readyState === WebSocket.OPEN
+                    ) {
+                        client.send(JSON.stringify({
+                            "type": "gameover",
+                            "result": "win",
+                            "errorMessage":
+                                `相手が「ん」のつく単語を入力しました！`,
+                        }));
+                    }
                 });
                 return;
             }
