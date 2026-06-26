@@ -35,42 +35,50 @@
         //サーバーからメッセージ（誰かが送信した単語）が届いたときの処理
         // サーバーからメッセージ（JSON）が届いたときの処理
         socket.onmessage = async (event) => {
-            // 届いたJSON文字列をオブジェクトに変換
             const data = JSON.parse(event.data);
 
-            //正常に進んでいる場合
-            if (data.type === "success") {
-                const historyContainer = document.querySelector("#historyContainer");
-                const currentCircle = document.querySelector("#currentCircle");
-                const turnIndicator = document.querySelector("#turnIndicator");
-                const sendButton = document.querySelector("#nextWordSendButton")
+            const historyContainer = document.querySelector("#historyContainer");
+            const currentCircle = document.querySelector("#currentCircle");
+            const turnIndicator = document.querySelector("#turnIndicator");
+            const sendButton = document.querySelector("#nextWordSendButton");
 
+            // 🔴 1. 待機中の通知が来た場合
+            if (data.type === "waiting") {
+                turnIndicator.textContent = data.message;
+                sendButton.disabled = true;     // ボタンをロック
+                nextWordInput.disabled = true;  // 入力欄をロック
+            }
+
+            //ゲーム開始、または通常の単語更新の場合
+            else if (data.type === "game_start" || data.type === "success") {
+                // 過去5件の履歴を表示
                 historyContainer.innerHTML = data.recentWords
                     .map(word => `<span class="history-word">${word}</span>`)
                     .join('<span class="arrow">➔</span>');
 
+                // 最新の1文字を丸の中に表示
                 let lastChar = data.word.slice(-1);
                 if (lastChar === "ー" && data.word.length > 1) {
                     lastChar = data.word.slice(-2, -1);
                 }
                 currentCircle.textContent = lastChar;
-
                 nextWordInput.value = "";
 
+                // ランダムに選ばれた手番に応じて画面を切り替える
                 if (data.isYourTurn) {
                     turnIndicator.textContent = "自分のターン";
                     sendButton.disabled = false;
                     nextWordInput.disabled = false;
                 } else {
-                    turnIndicator.textContent = "相手のターン(考え中...)";
+                    turnIndicator.textContent = "相手のターン（考え中…）";
                     sendButton.disabled = true;
                     nextWordInput.disabled = true;
                 }
             }
-            //誰かがミスしてゲームオーバーになった場合
+
+            //ゲームオーバーの場合
             else if (data.type === "gameover") {
                 const msg = encodeURIComponent(data.errorMessage);
-                // 全員同時に end.html へ強制連行！
                 window.location.href = `end.html?msg=${msg}`;
             }
         };

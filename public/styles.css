@@ -3,39 +3,52 @@
 body {
     background: skyblue;
 }
+/*履歴と丸を包むエリア */
 .game-area {
     display: flex;
+    flex-direction: column;
     align-items: center;
-    justify-content: center;
+    justify-content: center; /* 全体を中央に寄せる */
     gap: 20px;
     margin: 40px 0;
+    overflow-x: hidden; /* 万が一履歴が長くなっても画面外にはみ出さないお守り */
 }
 
-/* 履歴全体の文字サイズや余白 */
+/*過去の履歴（5件）が横並びになるコンテナ */
 #historyContainer {
     font-size: 24px;
     display: flex;
+    flex-direction: row; /* 履歴自体も右から左へ（新しいものが右、古いものが左） */
     align-items: center;
-    gap: 10px;
+    gap: 15px;
 }
 
-/* 矢印のデザイン */
+/* 矢印のデザイン*/
 .arrow {
     color: #1a6585;
     font-weight: bold;
+    font-size: 28px;
 }
 
-/* 🔴 中央の青い丸 */
+/* 履歴内の単語の文字*/
+.history-word {
+    color: #555;
+    font-weight: 500;
+}
+
+/* 丸 */
 #currentCircle {
-    width: 100px;
-    height: 100px;
+    width: 110px;
+    height: 110px;
     background-color: #1a6585; /* スライドに近い濃い青 */
     color: white;
-    border-radius: 50%; /* これで綺麗な丸になる */
+    border-radius: 50%; /* 綺麗な正円にする */
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 48px;
+    font-size: 52px;
     font-weight: bold;
-    border: 3px solid #0d3b50;
+    box-shadow: 0 4px 10px
+        rgba(0, 0, 0, 0.15); /* ちょっと立体感を出す */
+    flex-shrink: 0; /* 履歴に押されて丸が潰れないように固定する */
 }

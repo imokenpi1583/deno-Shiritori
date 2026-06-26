@@ -5,6 +5,7 @@ import { serveDir } from "jsr:@std/http/file-server";
 let wordHistory = ["しりとり"];
 let connectedClients = [];
 let turnIndex = 0; // 現在何番目のプレイヤーのターンか（0または1）
+let gameStarted = false;
 
 // 全員にJSONデータを送るヘルパー関数
 function broadcast(data) {
@@ -33,7 +34,36 @@ Deno.serve(async (_req) => {
 
         socket.onopen = () => {
             console.log("プレイヤー参戦！");
+            // 3人目以降の接続は一旦拒否
+            if (connectedClients.length >= 2) {
+                socket.close(1008, "満員です");
+                return;
+            }
+
             connectedClients.push(socket);
+
+            if (connectedClients.length === 1) {
+                gameStarted = false;
+                socket.send(JSON.stringify({
+                    "type": "waiting",
+                    "message": "対戦相手を待っています...",
+                }));
+            } else if (connectedClients.length === 2 && !gameStarted) {
+                gameStarted = true;
+
+                //先攻後攻をランダムで決める
+                turnIndex = Math.floor(Math.random() * 2);
+                console.log(
+                    `ゲーム開始！先攻プレイヤーのインデックス: ${turnIndex}`,
+                );
+
+                // 全員にゲーム開始の個別データを送る
+                broadcast({
+                    "type": "game_start",
+                    "word": wordHistory[wordHistory.length - 1],
+                    "recentWords": wordHistory.slice(-5),
+                });
+            }
         };
 
         socket.onclose = () => {
@@ -41,8 +71,17 @@ Deno.serve(async (_req) => {
             connectedClients = connectedClients.filter((client) =>
                 client !== socket
             );
-
             turnIndex = 0;
+            gameStarted = false;
+
+            // もし1人残されたら、その人を再び待機状態にする
+            if (connectedClients.length === 1) {
+                connectedClients[0].send(JSON.stringify({
+                    "type": "waiting",
+                    "message":
+                        "対戦相手が切断しました。新たな相手を待っています...",
+                }));
+            }
         };
 
         //
@@ -127,14 +166,7 @@ Deno.serve(async (_req) => {
             // 2人対戦なら 0 ➔ 1 ➔ 0 ➔ 1 と交互に入れ替わる
             turnIndex = (turnIndex + 1) % connectedClients.length;
 
-            // 全員に通知（進化したbroadcastを呼ぶ）
-            broadcast({
-                "type": "success",
-                "word": nextWord,
-                "recentWords": recentWords,
-            });
-
-            //正しいJSONデータ形式で全員に一斉送信！
+            //正しいJSONデータ形式で全員に一斉送信
             broadcast({
                 "type": "success",
                 "word": nextWord,
