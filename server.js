@@ -6,19 +6,28 @@ let wordHistory = ["しりとり"];
 let connectedClients = [];
 let turnIndex = 0; // 現在何番目のプレイヤーのターンか（0または1）
 let gameStarted = false;
+let spectators = [];
 
 // 全員にJSONデータを送るヘルパー関数
 function broadcast(data) {
-    connectedClients.forEach((clients, index) => {
-        if (clients.readyState === WebSocket.OPEN) {
+    connectedClients.forEach((client, index) => {
+        if (client.readyState === WebSocket.OPEN) {
             const isYourTurn = index === turnIndex;
-
-            const personallizedData = {
+            client.send(JSON.stringify({
                 ...data,
                 isYourTurn: isYourTurn,
-            };
+                role: "player",
+            }));
+        }
+    });
 
-            clients.send(JSON.stringify(personallizedData));
+    spectators.forEach((spectator) => {
+        if (spectator.readyState === WebSocket.OPEN) {
+            spectator.send(JSON.stringify({
+                ...data,
+                isYourTurn: false,
+                role: "spectator",
+            }));
         }
     });
 }
@@ -36,7 +45,18 @@ Deno.serve(async (_req) => {
             console.log("プレイヤー参戦！");
             // 3人目以降の接続は一旦拒否
             if (connectedClients.length >= 2) {
-                socket.close(1008, "満員です");
+                spectators.push(socket);
+                console.log(
+                    `観戦者が増えました。現在の観戦者数: ${spectators.length}`,
+                );
+
+                socket.send(JSON.stringify({
+                    "type": "spectate_start",
+                    "role": "spectator",
+                    "word": wordHistory[wordHistory.length - 1],
+                    "recentWords": wordHistory.slice(-5),
+                    "message": "満員のため観戦モードで参加中",
+                }));
                 return;
             }
 
@@ -46,6 +66,7 @@ Deno.serve(async (_req) => {
                 gameStarted = false;
                 socket.send(JSON.stringify({
                     "type": "waiting",
+                    "role": "player",
                     "message": "対戦相手を待っています...",
                 }));
             } else if (connectedClients.length === 2 && !gameStarted) {
@@ -71,21 +92,23 @@ Deno.serve(async (_req) => {
             connectedClients = connectedClients.filter((client) =>
                 client !== socket
             );
-            turnIndex = 0;
-            gameStarted = false;
+            if (connectedClients.length < 2) {
+                turnIndex = 0;
+                gameStarted = false;
 
-            // もし1人残されたら、その人を再び待機状態にする
-            if (connectedClients.length === 1) {
-                connectedClients[0].send(JSON.stringify({
-                    "type": "waiting",
-                    "message":
-                        "対戦相手が切断しました;;新たな相手を待っています...",
-                }));
+                // もし1人残されたら、その人を再び待機状態にする
+                if (connectedClients.length === 1) {
+                    connectedClients[0].send(JSON.stringify({
+                        "type": "waiting",
+                        "message":
+                            "対戦相手が切断しました;;新たな相手を待っています...",
+                    }));
+                }
             }
         };
 
         socket.onmessage = (event) => {
-            // 1. 手番プレイヤーからの送信かチェック
+            //手番プレイヤーからの送信かチェック
             const currentPlayerSocket = connectedClients[turnIndex];
             if (socket !== currentPlayerSocket) {
                 // 自分のターンじゃない奴からのメッセージは無視する
@@ -100,22 +123,16 @@ Deno.serve(async (_req) => {
                 socket.send(JSON.stringify({
                     "type": "gameover",
                     "result": "lose",
+                    "role": "player",
                     "errorMessage": `「${nextWord}」はすでに使われています！`,
                 }));
 
-                //勝者に送る
-                connectedClients.forEach((client) => {
-                    if (
-                        client !== socket &&
-                        client.readyState === WebSocket.OPEN
-                    ) {
-                        client.send(JSON.stringify({
-                            "type": "gameover",
-                            "result": "win",
-                            "errorMessage":
-                                `相手が「${nextWord}」という重複した単語を使いました！`,
-                        }));
-                    }
+                //勝者,観戦者に送る
+                broadcast({
+                    "type": "gameover",
+                    "result": "win", // 自分以外はみんな勝ち（または終了）扱い
+                    "errorMessage":
+                        `プレイヤーが「${nextWord}」という重複した単語を使いました！`,
                 });
                 return;
             }
@@ -162,19 +179,12 @@ Deno.serve(async (_req) => {
                         `「${nextWord}」は「${previousEnd}」に続いていません！`,
                 }));
 
-                //勝者に送る
-                connectedClients.forEach((client) => {
-                    if (
-                        client !== socket &&
-                        client.readyState === WebSocket.OPEN
-                    ) {
-                        client.send(JSON.stringify({
-                            "type": "gameover",
-                            "result": "win",
-                            "errorMessage":
-                                `相手が「${previousEnd}」に続かない単語を入力しました！`,
-                        }));
-                    }
+                //勝者、観戦者に送る
+                broadcast({
+                    "type": "gameover",
+                    "result": "win",
+                    "errorMessage":
+                        `プレイヤーが「${previousEnd}」に続かない単語を入力しました！`,
                 });
                 return;
             }
@@ -188,19 +198,12 @@ Deno.serve(async (_req) => {
                     "errorMessage": `末尾が「ん」で終わっています！`,
                 }));
 
-                //勝者に送る
-                connectedClients.forEach((client) => {
-                    if (
-                        client !== socket &&
-                        client.readyState === WebSocket.OPEN
-                    ) {
-                        client.send(JSON.stringify({
-                            "type": "gameover",
-                            "result": "win",
-                            "errorMessage":
-                                `相手が「ん」のつく単語を入力しました！`,
-                        }));
-                    }
+                //勝者、観戦者に送る
+                broadcast({
+                    "type": "gameover",
+                    "result": "win",
+                    "errorMessage":
+                        `プレイヤーが「ん」のつく単語を入力しました！`,
                 });
                 return;
             }

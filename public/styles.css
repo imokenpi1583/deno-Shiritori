@@ -14,6 +14,22 @@ body {
     overflow-x: hidden; /* 万が一履歴が長くなっても画面外にはみ出さないお守り */
 }
 
+.input-area {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 5px;
+    margin-top: 10px;
+}
+
+.form {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 10px;
+}
+
 /*過去の履歴（5件）が横並びになるコンテナ */
 #historyContainer {
     font-size: 24px;

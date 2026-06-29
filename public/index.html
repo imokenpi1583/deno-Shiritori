@@ -19,10 +19,14 @@
         <div id="currentCircle">り</div>
     </div>
 
-    <p id="turnIndicator">自分のターン</p>
-    <!-- 次の文字を入力するフォーム -->
-    <input id="nextWordInput" type="text" />
-    <button id="nextWordSendButton">送信</button>
+    <div class="input-area">
+        <p id="turnIndicator">自分のターン</p>
+        <!-- 次の文字を入力するフォーム -->
+        <div class="form">
+            <input id="nextWordInput" type="text" />
+            <button id="nextWordSendButton">送信</button>
+        </div>
+    </div>
     <!-- JavaScriptを実行 -->
 
     <script>
@@ -32,7 +36,6 @@
         const paragraph = document.querySelector("#previousWord");
         const nextWordInput = document.querySelector("#nextWordInput");
 
-        //サーバーからメッセージ（誰かが送信した単語）が届いたときの処理
         // サーバーからメッセージ（JSON）が届いたときの処理
         socket.onmessage = async (event) => {
             const data = JSON.parse(event.data);
@@ -42,8 +45,39 @@
             const turnIndicator = document.querySelector("#turnIndicator");
             const sendButton = document.querySelector("#nextWordSendButton");
 
+            //ゲームオーバーの場合
+            if (data.type === "gameover") {
+                const msg = encodeURIComponent(data.errorMessage);
+                if (data.role === "spectator") {
+                    window.location.href = `win.html?msg=${encodeURIComponent("試合が終了しました！")}`;
+                } else {
+                    //自分が勝ったか負けたかで、遷移するファイルを分ける！
+                    if (data.result === "win") {
+                        window.location.href = `win.html?msg=${msg}`;
+                    } else {
+                        window.location.href = `lose.html?msg=${msg}`;
+                    }
+                }
+            }
+            //観戦者接続
+            if (data.type === "spectate_start") {
+                turnIndicator.textContent = data.message;
+                sendButton.disabled = true;     // 入力とボタンは永久ロック
+                nextWordInput.disabled = true;
+
+                // 現在のしりとり状況を表示
+                historyContainer.innerHTML = data.recentWords
+                    .map(word => `<span class="history-word">${word}</span>`)
+                    .join('<span class="arrow">➔</span>');
+
+                let lastChar = data.word.slice(-1);
+                if (lastChar === "ー" && data.word.length > 1) {
+                    lastChar = data.word.slice(-2, -1);
+                }
+                currentCircle.textContent = lastChar;
+            }
             //待機中の通知が来た場合
-            if (data.type === "waiting") {
+            else if (data.type === "waiting") {
                 turnIndicator.textContent = data.message;
                 sendButton.disabled = true;     // ボタンをロック
                 nextWordInput.disabled = true;  // 入力欄をロック
@@ -65,28 +99,24 @@
                 nextWordInput.value = "";
 
                 // ランダムに選ばれた手番に応じて画面を切り替える
-                if (data.isYourTurn) {
-                    turnIndicator.textContent = "自分のターン";
-                    sendButton.disabled = false;
-                    nextWordInput.disabled = false;
-                } else {
-                    turnIndicator.textContent = "相手のターン（考え中…）";
+                if (data.role === "spectator") {
+                    turnIndicator.textContent = "観戦中";
                     sendButton.disabled = true;
                     nextWordInput.disabled = true;
-                }
-            }
-
-            //ゲームオーバーの場合
-            else if (data.type === "gameover") {
-                const msg = encodeURIComponent(data.errorMessage);
-
-                // 🔴 自分が勝ったか負けたかで、遷移するファイルを分ける！
-                if (data.result === "win") {
-                    window.location.href = `win.html?msg=${msg}`;
                 } else {
-                    window.location.href = `lose.html?msg=${msg}`;
+                    if (data.isYourTurn) {
+                        turnIndicator.textContent = "自分のターン";
+                        sendButton.disabled = false;
+                        nextWordInput.disabled = false;
+                    } else {
+                        turnIndicator.textContent = "相手のターン（考え中…）";
+                        sendButton.disabled = true;
+                        nextWordInput.disabled = true;
+                    }
                 }
             }
+
+
         };
 
         //送信ボタンの押下時に実行
