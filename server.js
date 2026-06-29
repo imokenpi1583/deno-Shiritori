@@ -32,6 +32,40 @@ function broadcast(data) {
     });
 }
 
+function broadcastGameOver(loserSocket, loserMessage, winnerMessage) {
+    //歯医者に送信
+    loserSocket.send(JSON.stringify({
+        "type": "gameover",
+        "result": "lose",
+        "role": "player",
+        "errorMessage": loserMessage,
+    }));
+    //勝者に送信
+    connectedClients.forEach((client) => {
+        if (
+            client !== loserSocket &&
+            client.readyState === WebSocket.OPEN
+        ) {
+            client.send(JSON.stringify({
+                "type": "gameover",
+                "result": "win",
+                "role": "player",
+                "errorMessage": winnerMessage,
+            }));
+        }
+    });
+    //観戦者に送信
+    spectators.forEach((spectator) => {
+        if (spectator.readyState === WebSocket.OPEN) {
+            spectator.send(JSON.stringify({
+                "type": "gameover",
+                "role": "spectator",
+                "errorMessage": "試合が終了しました！",
+            }));
+        }
+    });
+}
+
 // localhostにDenoのHTTPサーバーを展開
 Deno.serve(async (_req) => {
     // パス名を取得する
@@ -119,21 +153,11 @@ Deno.serve(async (_req) => {
 
             // 重複チェック
             if (wordHistory.includes(nextWord)) {
-                //敗者に送る
-                socket.send(JSON.stringify({
-                    "type": "gameover",
-                    "result": "lose",
-                    "role": "player",
-                    "errorMessage": `「${nextWord}」はすでに使われています！`,
-                }));
-
-                //勝者,観戦者に送る
-                broadcast({
-                    "type": "gameover",
-                    "result": "win", // 自分以外はみんな勝ち（または終了）扱い
-                    "errorMessage":
-                        `プレイヤーが「${nextWord}」という重複した単語を使いました！`,
-                });
+                broadcastGameOver(
+                    socket,
+                    `「${nextWord}」はすでに使われています！`,
+                    `相手が「${nextWord}」という重複した単語を使いました！`,
+                );
                 return;
             }
 
@@ -171,40 +195,21 @@ Deno.serve(async (_req) => {
 
             // しりとり接続チェック
             if (previousEnd !== nextStart) {
-                //敗者に送る
-                socket.send(JSON.stringify({
-                    "type": "gameover",
-                    "result": "lose",
-                    "errorMessage":
-                        `「${nextWord}」は「${previousEnd}」に続いていません！`,
-                }));
-
-                //勝者、観戦者に送る
-                broadcast({
-                    "type": "gameover",
-                    "result": "win",
-                    "errorMessage":
-                        `プレイヤーが「${previousEnd}」に続かない単語を入力しました！`,
-                });
+                broadcastGameOver(
+                    socket,
+                    `「${nextWord}」は「${previousEnd}」に続いていません！`,
+                    `相手が「${previousEnd}」に続かない単語を入力しました！`,
+                );
                 return;
             }
 
             // 「ん」チェック
             if (toHiragana(nextWord.slice(-1)) === "ん") {
-                //敗者に送る
-                socket.send(JSON.stringify({
-                    "type": "gameover",
-                    "result": "lose",
-                    "errorMessage": `末尾が「ん」で終わっています！`,
-                }));
-
-                //勝者、観戦者に送る
-                broadcast({
-                    "type": "gameover",
-                    "result": "win",
-                    "errorMessage":
-                        `プレイヤーが「ん」のつく単語を入力しました！`,
-                });
+                broadcastGameOver(
+                    socket,
+                    `末尾が「ん」で終わっています！`,
+                    `相手が「ん」のつく単語を入力しました！`,
+                );
                 return;
             }
 
