@@ -6,6 +6,9 @@ const kv = await Deno.openKv();
 // クラウド環境で全サーバーが共通して使う「部屋のID」
 const ROOM_KEY = ["shiritori_room_data"];
 
+// 対戦に必要なプレイヤー数（3人目以降は観戦者になる）
+const MAX_PLAYERS = 2;
+
 // サーバー起動時にデータベースの初期状態をセット
 const existing = await kv.get(ROOM_KEY);
 if (!existing.value) {
@@ -17,10 +20,7 @@ if (!existing.value) {
 }
 
 //直前の単語を保持しておく
-let wordHistory = ["しりとり"];
 let connectedClients = [];
-let turnIndex = 0; // 現在何番目のプレイヤーのターンか（0または1）
-let gameStarted = false;
 let spectators = [];
 
 const toHiragana = (str) => {
@@ -29,11 +29,14 @@ const toHiragana = (str) => {
     });
 };
 
+const compressChouon = (str) => {
+    return str.replace(/ー+/g, "ー");
+};
+
 const getNextChar = (word) => {
     if (!word) return "";
 
-    // 1. 2回以上連続する伸ばし棒「ー」を1回に圧縮
-    const cleaned = word.replace(/ー+/g, "ー");
+    const cleaned = compressChouon(word);
 
     // 2. 末尾の文字を取得
     let lastChar = cleaned.slice(-1);
@@ -145,9 +148,8 @@ Deno.serve(async (_req) => {
             console.log("プレイヤー参戦！");
             const entry = await kv.get(ROOM_KEY);
             let roomData = entry.value;
-            let currentWordHistory = roomData.wordHistory;
             // 3人目以降の接続は観戦者モード
-            if (connectedClients.length >= 2) {
+            if (connectedClients.length >= MAX_PLAYERS) {
                 spectators.push(socket);
 
                 const lastWord =
@@ -158,7 +160,7 @@ Deno.serve(async (_req) => {
                 socket.send(JSON.stringify({
                     "type": "spectate_start",
                     "role": "spectator",
-                    "word": wordHistory[wordHistory.length - 1],
+                    "word": lastWord,
                     "recentWords": roomData.wordHistory.slice(-5),
                     "nextChar": initialNextChar,
                     "message": "満員のため観戦モードで参加中",
@@ -176,12 +178,12 @@ Deno.serve(async (_req) => {
                     "role": "player",
                     "message": "対戦相手を待っています...",
                 }));
-            } else if (connectedClients.length === 2) {
+            } else if (connectedClients.length === MAX_PLAYERS) {
                 // 2人揃ったらゲーム開始！
                 roomData.gameStarted = true;
 
                 // 先攻後攻をランダムで決めてDBに書き込む
-                roomData.turnIndex = Math.floor(Math.random() * 2);
+                roomData.turnIndex = Math.floor(Math.random() * MAX_PLAYERS);
                 await kv.set(ROOM_KEY, roomData);
 
                 console.log(
@@ -229,7 +231,7 @@ Deno.serve(async (_req) => {
             connectedClients = connectedClients.filter((client) =>
                 client !== socket
             );
-            if (connectedClients.length < 2) {
+            if (connectedClients.length < MAX_PLAYERS) {
                 if (connectedClients.length === 0) {
                     await kv.set(ROOM_KEY, {
                         wordHistory: ["しりとり"],
@@ -258,9 +260,6 @@ Deno.serve(async (_req) => {
             let roomData = entry.value;
             let wordHistoryFromDB = roomData.wordHistory;
 
-            const previousWord =
-                wordHistoryFromDB[wordHistoryFromDB.length - 1];
-
             //手番プレイヤーからの送信かチェック
             const currentPlayerSocket = connectedClients[roomData.turnIndex];
             if (socket !== currentPlayerSocket) {
@@ -269,13 +268,8 @@ Deno.serve(async (_req) => {
             }
 
             // 文字の正規化（標準化）処理
-            const rawPreviousWord =
+            const PreviousWord =
                 wordHistoryFromDB[wordHistoryFromDB.length - 1];
-
-            // 2回以上連続する伸ばし棒「ー」を1回にギュッと圧縮する関数
-            const compressChouon = (str) => {
-                return str.replace(/ー+/g, "ー");
-            };
 
             // 入力された単語の連続する伸ばし棒をあらかじめ破壊（圧縮）
             const cleanedNextWord = compressChouon(nextWord);
@@ -303,7 +297,7 @@ Deno.serve(async (_req) => {
             const nextStart = toHiragana(cleanedNextWord.slice(0, 1));
 
             // 直前の単語（DBの末尾）も連続伸ばし棒を破壊してから最後の文字を判定する
-            const previousEnd = getNextChar(rawPreviousWord);
+            const previousEnd = getNextChar(PreviousWord);
 
             // しりとり接続チェック
             if (previousEnd !== nextStart) {
@@ -331,7 +325,7 @@ Deno.serve(async (_req) => {
             wordHistoryFromDB.push(nextWord);
             const recentWords = wordHistoryFromDB.slice(-5);
 
-            roomData.turnIndex = (roomData.turnIndex + 1) % 2;
+            roomData.turnIndex = (roomData.turnIndex + 1) % MAX_PLAYERS;
             roomData.wordHistory = wordHistoryFromDB;
 
             //更新した最新状態をデータベースに保存（これで他のサーバーにも一瞬で同期される）
@@ -344,7 +338,7 @@ Deno.serve(async (_req) => {
                 "type": "success",
                 "word": nextWord,
                 "recentWords": recentWords,
-                "nextChar": calculatedNextChar,
+                "nextChar": initialNextChar,
             }, roomData);
         };
 

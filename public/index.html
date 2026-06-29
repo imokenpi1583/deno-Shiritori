@@ -33,7 +33,6 @@
         //WebSocketサーバーに接続する
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
         const socket = new WebSocket(`${protocol}//${window.location.host}/shiritori-ws`);
-        const paragraph = document.querySelector("#previousWord");
         const nextWordInput = document.querySelector("#nextWordInput");
 
         // サーバーからメッセージ（JSON）が届いたときの処理
@@ -71,11 +70,7 @@
                     .map(word => `<span class="history-word">${word}</span>`)
                     .join('<span class="arrow">➔</span>');
 
-                let lastChar = data.word.slice(-1);
-                if (lastChar === "ー" && data.word.length > 1) {
-                    lastChar = data.word.slice(-2, -1);
-                }
-                currentCircle.textContent = lastChar;
+                currentCircle.textContent = data.nextChar;
             }
             //待機中の通知が来た場合
             else if (data.type === "waiting") {
@@ -125,7 +120,6 @@
 
             // もし入力が空、または正規表現にマッチしなかったら弾く
             if (!nextWordInputText) return;
-            console.log("死ね");
             if (!regex.test(nextWordInputText)) {
                 alert("ひらがな、またはカタカナだけで入力してください！(スペースや記号は使えません)");
                 return; // ここで処理を終了して、サーバーには送らない
@@ -133,7 +127,6 @@
 
             // 問題なければWebSocketで送信
             socket.send(nextWordInputText);
-            console.log("消えろ");
         };
 
         // 最初にページを開いたときに最新の単語を取得する処理
@@ -153,8 +146,7 @@
                     .join('<span class="arrow">➔</span>');
 
                 // 最新の1文字を丸の中に表示
-                const lastChar = data.word.slice(-1);
-                currentCircle.textContent = lastChar;
+                currentCircle.textContent = data.nextChar;
             }
         }
 
