@@ -10,6 +10,9 @@
 <body style="background-color: #fff1f0; text-align: center; padding-top: 50px;">
   <h1 style="color: #f5222d; font-size: 64px; margin-bottom: 20px;">まけ;;</h1>
   <p id="message" style="font-size: 24px; color: #333;"></p>
+  <p id="score" style="font-size: 24px; color: #333;">
+    続いた単語の数： <span id="wordCountValue" style="color: #ff4d4f; font-size: 36px;">0</span>個
+  </p>
   <br>
   <button id="resetButton">再接続</button>
 
@@ -31,6 +34,10 @@
         alert("リセットに失敗しました");
       }
     };
+    const count = urlParams.get('count');
+    if (count) {
+      document.querySelector("#wordCountValue").textContent = count;
+    }
   </script>
 </body>
 

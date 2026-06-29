@@ -48,14 +48,15 @@
             //ゲームオーバーの場合
             if (data.type === "gameover") {
                 const msg = encodeURIComponent(data.errorMessage);
+                const count = data.wordCount;
                 if (data.role === "spectator") {
-                    window.location.href = `win.html?msg=${encodeURIComponent("試合が終了しました！")}`;
+                    window.location.href = `win.html?msg=${encodeURIComponent("試合が終了しました！")}&count=${count}`;
                 } else {
                     //自分が勝ったか負けたかで、遷移するファイルを分ける！
                     if (data.result === "win") {
-                        window.location.href = `win.html?msg=${msg}`;
+                        window.location.href = `win.html?msg=${msg}&count=${count}`;
                     } else {
-                        window.location.href = `lose.html?msg=${msg}`;
+                        window.location.href = `lose.html?msg=${msg}&count=${count}`;
                     }
                 }
             }

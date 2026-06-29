@@ -8,16 +8,34 @@
 </head>
 
 <body style="background-color: #e6f7ff; text-align: center; padding-top: 50px;">
-  <h1 style="color: #1890ff; font-size: 64px; margin-bottom: 20px;">かち^^</h1>
+  <div id="playerWinView">
+    <h1 style="color: #1890ff; font-size: 64px; margin-bottom: 20px;">かち^^</h1>
+  </div>
+  <div id="spectatorEndView" style="display: none;">
+    <h1 style="color: #4a5568; font-size: 64px; margin-bottom: 20px;">試合終了</h1>
+  </div>
   <p id="message" style="font-size: 24px; color: #333;"></p>
+  <p id="score" style="font-size: 24px; color: #333;">
+    続いた単語の数：<span id="wordCountValue" style="color: #ff4d4f; font-size: 36px;">0</span>個
+  </p>
   <br>
   <button id="resetButton">再接続</button>
 
   <script>
     const urlParams = new URLSearchParams(window.location.search);
     const msg = urlParams.get('msg');
+    const count = urlParams.get('count');
+
     if (msg) {
       document.querySelector("#message").textContent = msg;
+    }
+    if (count) {
+      document.querySelector("#wordCountValue").textContent = count;
+    }
+    if (msg === "試合が終了しました！") {
+      document.querySelector("#playerWinView").style.display = "none";
+      document.querySelector("#spectatorEndView").style.display = "block";
+      document.body.style.backgroundColor = "#f7fafc";
     }
     document.querySelector("#resetButton").onclick = async () => {
       // サーバーにリセットを要求
@@ -30,6 +48,7 @@
         alert("リセットに失敗しました");
       }
     };
+
   </script>
 </body>
 

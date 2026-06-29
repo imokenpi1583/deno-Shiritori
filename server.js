@@ -32,13 +32,19 @@ function broadcast(data) {
     });
 }
 
-function broadcastGameOver(loserSocket, loserMessage, winnerMessage) {
+function broadcastGameOver(
+    loserSocket,
+    loserMessage,
+    winnerMessage,
+    wordCount,
+) {
     //歯医者に送信
     loserSocket.send(JSON.stringify({
         "type": "gameover",
         "result": "lose",
         "role": "player",
         "errorMessage": loserMessage,
+        "wordCount": wordCount,
     }));
     //勝者に送信
     connectedClients.forEach((client) => {
@@ -51,6 +57,7 @@ function broadcastGameOver(loserSocket, loserMessage, winnerMessage) {
                 "result": "win",
                 "role": "player",
                 "errorMessage": winnerMessage,
+                "wordCount": wordCount,
             }));
         }
     });
@@ -61,6 +68,7 @@ function broadcastGameOver(loserSocket, loserMessage, winnerMessage) {
                 "type": "gameover",
                 "role": "spectator",
                 "errorMessage": "試合が終了しました！",
+                "wordCount": wordCount,
             }));
         }
     });
@@ -157,6 +165,7 @@ Deno.serve(async (_req) => {
                     socket,
                     `「${nextWord}」はすでに使われています！`,
                     `相手が「${nextWord}」という重複した単語を使いました！`,
+                    wordHistory.length,
                 );
                 return;
             }
@@ -199,6 +208,7 @@ Deno.serve(async (_req) => {
                     socket,
                     `「${nextWord}」は「${previousEnd}」に続いていません！`,
                     `相手が「${previousEnd}」に続かない単語を入力しました！`,
+                    wordHistory.length,
                 );
                 return;
             }
@@ -209,6 +219,7 @@ Deno.serve(async (_req) => {
                     socket,
                     `末尾が「ん」で終わっています！`,
                     `相手が「ん」のつく単語を入力しました！`,
+                    wordHistory.length,
                 );
                 return;
             }
