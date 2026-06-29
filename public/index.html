@@ -129,7 +129,7 @@
 
             // もし入力が空、または正規表現にマッチしなかったら弾く
             if (!nextWordInputText) return;
-
+            console.log("死ね");
             if (!regex.test(nextWordInputText)) {
                 alert("ひらがな、またはカタカナだけで入力してください！(スペースや記号は使えません)");
                 return; // ここで処理を終了して、サーバーには送らない
@@ -137,6 +137,7 @@
 
             // 問題なければWebSocketで送信
             socket.send(nextWordInputText);
+            console.log("消えろ");
         };
 
         // 最初にページを開いたときに最新の単語を取得する処理
