@@ -19,7 +19,7 @@ if (!existing.value) {
     });
 }
 
-//直前の単語を保持しておく
+// 接続中のプレイヤー・観戦者（WebSocketは保存できないため、これらはローカル変数のままでよい）
 let connectedClients = [];
 let spectators = [];
 
@@ -29,6 +29,7 @@ const toHiragana = (str) => {
     });
 };
 
+// 2回以上連続する伸ばし棒「ー」を1回に圧縮する（サーバー内の複数箇所で使う共通処理）
 const compressChouon = (str) => {
     return str.replace(/ー+/g, "ー");
 };
@@ -36,6 +37,7 @@ const compressChouon = (str) => {
 const getNextChar = (word) => {
     if (!word) return "";
 
+    // 1. 伸ばし棒の連続を圧縮
     const cleaned = compressChouon(word);
 
     // 2. 末尾の文字を取得
@@ -179,7 +181,7 @@ Deno.serve(async (_req) => {
                     "message": "対戦相手を待っています...",
                 }));
             } else if (connectedClients.length === MAX_PLAYERS) {
-                // 2人揃ったらゲーム開始！
+                // 定員に達したらゲーム開始！
                 roomData.gameStarted = true;
 
                 // 先攻後攻をランダムで決めてDBに書き込む
@@ -196,7 +198,7 @@ Deno.serve(async (_req) => {
 
                 const startNextChar = getNextChar(currentWord);
 
-                // 2人揃ったので、それぞれのプレイヤーに手番を送る
+                // 定員に達したので、それぞれのプレイヤーに手番を送る
                 connectedClients.forEach((client, index) => {
                     if (client.readyState === WebSocket.OPEN) {
                         const isYourTurn = index === roomData.turnIndex;
@@ -268,7 +270,7 @@ Deno.serve(async (_req) => {
             }
 
             // 文字の正規化（標準化）処理
-            const PreviousWord =
+            const previousWord =
                 wordHistoryFromDB[wordHistoryFromDB.length - 1];
 
             // 入力された単語の連続する伸ばし棒をあらかじめ破壊（圧縮）
@@ -297,7 +299,7 @@ Deno.serve(async (_req) => {
             const nextStart = toHiragana(cleanedNextWord.slice(0, 1));
 
             // 直前の単語（DBの末尾）も連続伸ばし棒を破壊してから最後の文字を判定する
-            const previousEnd = getNextChar(PreviousWord);
+            const previousEnd = getNextChar(previousWord);
 
             // しりとり接続チェック
             if (previousEnd !== nextStart) {
@@ -338,7 +340,7 @@ Deno.serve(async (_req) => {
                 "type": "success",
                 "word": nextWord,
                 "recentWords": recentWords,
-                "nextChar": initialNextChar,
+                "nextChar": calculatedNextChar,
             }, roomData);
         };
 
@@ -362,6 +364,7 @@ Deno.serve(async (_req) => {
                 "type": "success",
                 "word": nextWord,
                 "recentWords": recentWords,
+                "nextChar": initialNextChar,
             }),
             {
                 headers: { "Content-Type": "application/json; charset=utf-8" },
