@@ -56,7 +56,7 @@ body {
 #currentCircle {
     width: 110px;
     height: 110px;
-    background-color: #1a6585; /* スライドに近い濃い青 */
+    background-color: #1a6585;
     color: white;
     border-radius: 50%; /* 綺麗な正円にする */
     display: flex;

@@ -23,6 +23,48 @@ let turnIndex = 0; // 現在何番目のプレイヤーのターンか（0また
 let gameStarted = false;
 let spectators = [];
 
+const toHiragana = (str) => {
+    return str.replace(/[\u30a1-\u30f6]/g, (match) => {
+        return String.fromCharCode(match.charCodeAt(0) - 0x60);
+    });
+};
+
+const getNextChar = (word) => {
+    if (!word) return "";
+
+    // 1. 2回以上連続する伸ばし棒「ー」を1回に圧縮
+    const cleaned = word.replace(/ー+/g, "ー");
+
+    // 2. 末尾の文字を取得
+    let lastChar = cleaned.slice(-1);
+
+    // 3. 末尾が伸ばし棒なら、その1つ前の文字を取得
+    if (lastChar === "ー" && cleaned.length > 1) {
+        lastChar = cleaned.slice(-2, -1);
+    }
+
+    // 4. 平仮名に変換
+    let nextChar = toHiragana(lastChar);
+
+    // 5. 小文字（ぁ、ゃ 等）を大文字（あ、や 等）に変換
+    const smallToLarge = {
+        "ぁ": "あ",
+        "ぃ": "い",
+        "ぅ": "う",
+        "ぇ": "え",
+        "ぉ": "お",
+        "ゃ": "や",
+        "ゅ": "ゆ",
+        "ょ": "よ",
+        "っ": "つ",
+    };
+    if (smallToLarge[nextChar]) {
+        nextChar = smallToLarge[nextChar];
+    }
+
+    return nextChar;
+};
+
 // 全員にJSONデータを送るヘルパー関数
 function broadcast(data, roomData) {
     connectedClients.forEach((client, index) => {
@@ -104,18 +146,21 @@ Deno.serve(async (_req) => {
             const entry = await kv.get(ROOM_KEY);
             let roomData = entry.value;
             let currentWordHistory = roomData.wordHistory;
-            // 3人目以降の接続は一旦拒否
+            // 3人目以降の接続は観戦者モード
             if (connectedClients.length >= 2) {
                 spectators.push(socket);
-                console.log(
-                    `観戦者が増えました。現在の観戦者数: ${spectators.length}`,
-                );
+
+                const lastWord =
+                    roomData.wordHistory[roomData.wordHistory.length - 1] ||
+                    "しりとり";
+                const initialNextChar = getNextChar(lastWord);
 
                 socket.send(JSON.stringify({
                     "type": "spectate_start",
                     "role": "spectator",
                     "word": wordHistory[wordHistory.length - 1],
-                    "recentWords": wordHistory.slice(-5),
+                    "recentWords": roomData.wordHistory.slice(-5),
+                    "nextChar": initialNextChar,
                     "message": "満員のため観戦モードで参加中",
                 }));
                 return;
@@ -143,10 +188,11 @@ Deno.serve(async (_req) => {
                     `ゲーム開始！先攻プレイヤーのインデックス: ${roomData.turnIndex}`,
                 );
 
-                // ✨【重要】ここでしっかりとデータベース（roomData）から変数を作ります！
                 const currentWord =
                     roomData.wordHistory[roomData.wordHistory.length - 1];
                 const recentWordsList = roomData.wordHistory.slice(-5);
+
+                const startNextChar = getNextChar(currentWord);
 
                 // 2人揃ったので、それぞれのプレイヤーに手番を送る
                 connectedClients.forEach((client, index) => {
@@ -156,6 +202,7 @@ Deno.serve(async (_req) => {
                             "type": "game_start",
                             "word": currentWord,
                             "recentWords": recentWordsList,
+                            "nextChar": startNextChar,
                             "isYourTurn": isYourTurn,
                             "role": "player",
                         }));
@@ -183,6 +230,17 @@ Deno.serve(async (_req) => {
                 client !== socket
             );
             if (connectedClients.length < 2) {
+                if (connectedClients.length === 0) {
+                    await kv.set(ROOM_KEY, {
+                        wordHistory: ["しりとり"],
+                        turnIndex: 0,
+                        gameStarted: false,
+                    });
+                    console.log(
+                        "全員退場したためデータをリセットしました。",
+                    );
+                    return;
+                }
                 // もし1人残されたら、その人を再び待機状態にする
                 if (connectedClients.length === 1) {
                     connectedClients[0].send(JSON.stringify({
@@ -210,56 +268,49 @@ Deno.serve(async (_req) => {
                 return;
             }
 
-            // 重複チェック
-            if (wordHistoryFromDB.includes(nextWord)) {
+            // 文字の正規化（標準化）処理
+            const rawPreviousWord =
+                wordHistoryFromDB[wordHistoryFromDB.length - 1];
+
+            // 2回以上連続する伸ばし棒「ー」を1回にギュッと圧縮する関数
+            const compressChouon = (str) => {
+                return str.replace(/ー+/g, "ー");
+            };
+
+            // 入力された単語の連続する伸ばし棒をあらかじめ破壊（圧縮）
+            const cleanedNextWord = compressChouon(nextWord);
+
+            // 重複チェック用の平仮名変換（圧縮済みの単語を使用）
+            const nextWordHiragana = toHiragana(cleanedNextWord);
+
+            // 過去の履歴もすべて「伸ばし棒圧縮＋ひらがな」に統一したチェック専用配列を作る
+            const hiraganaHistory = wordHistoryFromDB.map((word) =>
+                toHiragana(compressChouon(word))
+            );
+
+            //重複チェック
+            if (hiraganaHistory.includes(nextWordHiragana)) {
                 broadcastGameOver(
                     socket,
-                    `「${nextWord}」はすでに使われています！`,
+                    `「${nextWord}」はすでに使われている単語です！`,
                     `相手が「${nextWord}」という重複した単語を使いました！`,
                     wordHistoryFromDB.length,
                 );
                 return;
             }
 
-            // 文字の正規化（標準化）処理
-            const rawPreviousWord =
-                wordHistoryFromDB[wordHistoryFromDB.length - 1];
-            const toHiragana = (str) => {
-                return str.replace(/[\u30a1-\u30f6]/g, (match) => {
-                    return String.fromCharCode(match.charCodeAt(0) - 0x60);
-                });
-            };
+            //次に繋げるスタート文字の判定（圧縮済みの先頭文字を取る）
+            const nextStart = toHiragana(cleanedNextWord.slice(0, 1));
 
-            const nextStart = toHiragana(nextWord.slice(0, 1));
-            let lastChar = rawPreviousWord.slice(-1);
-
-            if (lastChar === "ー" && rawPreviousWord.length > 1) {
-                lastChar = rawPreviousWord.slice(-2, -1);
-            }
-
-            let previousEnd = toHiragana(lastChar);
-
-            const smallToLarge = {
-                "ぁ": "あ",
-                "ぃ": "い",
-                "ぅ": "う",
-                "ぇ": "え",
-                "ぉ": "お",
-                "ゃ": "や",
-                "ゅ": "ゆ",
-                "ょ": "よ",
-                "っ": "つ",
-            };
-            if (smallToLarge[previousEnd]) {
-                previousEnd = smallToLarge[previousEnd];
-            }
+            // 直前の単語（DBの末尾）も連続伸ばし棒を破壊してから最後の文字を判定する
+            const previousEnd = getNextChar(rawPreviousWord);
 
             // しりとり接続チェック
             if (previousEnd !== nextStart) {
                 broadcastGameOver(
                     socket,
                     `「${nextWord}」は「${previousEnd}」に続いていません！`,
-                    `相手が「${previousEnd}」に続かない単語を入力しました！`,
+                    `相手が「${previousEnd}」に続かない単語「${nextWord}」を入力しました！`,
                     wordHistoryFromDB.length,
                 );
                 return;
@@ -286,11 +337,14 @@ Deno.serve(async (_req) => {
             //更新した最新状態をデータベースに保存（これで他のサーバーにも一瞬で同期される）
             await kv.set(ROOM_KEY, roomData);
 
+            const calculatedNextChar = getNextChar(nextWord);
+
             //正しいJSONデータ形式で全員に一斉送信
             broadcast({
                 "type": "success",
                 "word": nextWord,
                 "recentWords": recentWords,
+                "nextChar": calculatedNextChar,
             }, roomData);
         };
 
@@ -305,6 +359,8 @@ Deno.serve(async (_req) => {
         const roomData = entry.value;
         const nextWord = roomData.wordHistory[roomData.wordHistory.length - 1];
         const recentWords = roomData.wordHistory.slice(-5); // 最初も過去5件を切り出す
+
+        const initialNextChar = getNextChar(nextWord);
 
         // WebSocketの成功時と同じ形のJSONデータを返すようにする
         return new Response(

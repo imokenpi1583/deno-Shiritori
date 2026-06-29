@@ -92,11 +92,7 @@
                     .join('<span class="arrow">➔</span>');
 
                 // 最新の1文字を丸の中に表示
-                let lastChar = data.word.slice(-1);
-                if (lastChar === "ー" && data.word.length > 1) {
-                    lastChar = data.word.slice(-2, -1);
-                }
-                currentCircle.textContent = lastChar;
+                currentCircle.textContent = data.nextChar;
                 nextWordInput.value = "";
 
                 // ランダムに選ばれた手番に応じて画面を切り替える
