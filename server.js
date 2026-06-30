@@ -284,17 +284,6 @@ Deno.serve(async (_req) => {
                 toHiragana(compressChouon(word))
             );
 
-            //重複チェック
-            if (hiraganaHistory.includes(nextWordHiragana)) {
-                broadcastGameOver(
-                    socket,
-                    `「${nextWord}」はすでに使われている単語です！`,
-                    `相手が「${nextWord}」という重複した単語を使いました！`,
-                    wordHistoryFromDB.length,
-                );
-                return;
-            }
-
             //次に繋げるスタート文字の判定（圧縮済みの先頭文字を取る）
             const nextStart = toHiragana(cleanedNextWord.slice(0, 1));
 
@@ -303,17 +292,23 @@ Deno.serve(async (_req) => {
 
             // しりとり接続チェック
             if (previousEnd !== nextStart) {
+                socket.send(JSON.stringify({
+                    "type": "input_error",
+                    "message":
+                        `「${nextWord}」は「${previousEnd}」に続いていません！`,
+                }));
+                return;
+            } //重複チェック
+            else if (hiraganaHistory.includes(nextWordHiragana)) {
                 broadcastGameOver(
                     socket,
-                    `「${nextWord}」は「${previousEnd}」に続いていません！`,
-                    `相手が「${previousEnd}」に続かない単語「${nextWord}」を入力しました！`,
+                    `「${nextWord}」はすでに使われている単語です！`,
+                    `相手が「${nextWord}」という重複した単語を使いました！`,
                     wordHistoryFromDB.length,
                 );
                 return;
-            }
-
-            // 「ん」チェック
-            if (toHiragana(nextWord.slice(-1)) === "ん") {
+            } // 「ん」チェック
+            else if (toHiragana(nextWord.slice(-1)) === "ん") {
                 broadcastGameOver(
                     socket,
                     `末尾が「ん」で終わっています！`,

@@ -44,8 +44,15 @@
             const turnIndicator = document.querySelector("#turnIndicator");
             const sendButton = document.querySelector("#nextWordSendButton");
 
+            //しりとり接続チェックはじかれたときのアラート
+            if (data.type === "input_error") {
+                alert(data.message);
+                nextWordInput.value = "";
+                nextWordInput.focus(); //cursorを合わせる
+                return;
+            }
             //ゲームオーバーの場合
-            if (data.type === "gameover") {
+            else if (data.type === "gameover") {
                 const msg = encodeURIComponent(data.errorMessage);
                 const count = data.wordCount;
                 if (data.role === "spectator") {
@@ -59,6 +66,7 @@
                     }
                 }
             }
+
             //観戦者接続
             if (data.type === "spectate_start") {
                 turnIndicator.textContent = data.message;
