@@ -11,12 +11,14 @@
 
 <body>
     <!-- bodyタグの中には実際に表示するものなどを書く -->
-    <h1>しりとり</h1>
+    <img src="./image/logo.png" alt="logo" width="227" height="100">
     <!-- 現在の単語を表示する場所 -->
     <div class="game-area">
         <div id="historyContainer"></div>
 
-        <div id="currentCircle">り</div>
+        <div id="current-circle-container">
+            <div id="target-char-display">り</div>
+        </div>
     </div>
 
     <div class="input-area">
@@ -24,7 +26,7 @@
         <!-- 次の文字を入力するフォーム -->
         <div class="form">
             <input id="nextWordInput" type="text" />
-            <button id="nextWordSendButton">送信</button>
+            <button id="nextWordSendButton"></button>
         </div>
     </div>
     <!-- JavaScriptを実行 -->
@@ -95,7 +97,7 @@
                     .join('<span class="arrow">➔</span>');
 
                 // 最新の1文字を丸の中に表示
-                currentCircle.textContent = data.nextChar;
+                document.getElementById("target-char-display").textContent = data.nextChar;
                 nextWordInput.value = "";
 
                 // ランダムに選ばれた手番に応じて画面を切り替える
