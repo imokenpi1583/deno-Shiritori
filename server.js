@@ -101,7 +101,7 @@ function broadcastGameOver(
     winnerMessage,
     wordCount,
 ) {
-    //歯医者に送信
+    //敗者に送信
     loserSocket.send(JSON.stringify({
         "type": "gameover",
         "result": "lose",

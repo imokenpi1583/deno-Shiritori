@@ -68,3 +68,7 @@ body {
         rgba(0, 0, 0, 0.15); /* ちょっと立体感を出す */
     flex-shrink: 0; /* 履歴に押されて丸が潰れないように固定する */
 }
+/*送信ボタン*/
+#nextWordSendButton {
+    padding: 10px;
+}
