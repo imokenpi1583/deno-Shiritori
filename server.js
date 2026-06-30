@@ -308,7 +308,7 @@ Deno.serve(async (_req) => {
                 );
                 return;
             } // 「ん」チェック
-            else if (toHiragana(nextWord.slice(-1)) === "ん") {
+            else if (getNextChar(nextWord) === "ん") {
                 broadcastGameOver(
                     socket,
                     `末尾が「ん」で終わっています！`,
