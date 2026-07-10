@@ -4,7 +4,9 @@ import { serveDir } from "jsr:@std/http/file-server";
 const kv = await Deno.openKv();
 
 // クラウド環境で全サーバーが共通して使う「部屋のID」
-const ROOM_KEY = ["shiritori_room_data"];
+const url = new URL(_req.url);
+const roomName = url.searchParams.get("room") || "default"; // 部屋名を取得
+const ROOM_KEY = ["shiritori_room_data", roomName]; // その部屋専用のKVキーが誕生！
 
 // 対戦に必要なプレイヤー数（3人目以降は観戦者になる）
 const MAX_PLAYERS = 2;
@@ -139,9 +141,15 @@ function broadcastGameOver(
 
 // localhostにDenoのHTTPサーバーを展開
 Deno.serve(async (_req) => {
-    // パス名を取得する
-    // http://localhost:8000/hoge に接続した場合"/hoge"が取得できる
-    const pathname = new URL(_req.url).pathname;
+    // URLオブジェクトの作成
+    const url = new URL(_req.url);
+    const pathname = url.pathname;
+
+    // クエリパラメータ（?room=xxx）から部屋名を取得（指定がない場合は "default" 部屋にする防衛策）
+    const roomName = url.searchParams.get("room") || "default";
+
+    //部屋名ごとに独立したKVデータベースのキーを動的に生成！
+    const ROOM_KEY = ["shiritori_room_data", roomName];
 
     if (pathname === "/shiritori-ws") {
         const { response, socket } = Deno.upgradeWebSocket(_req);

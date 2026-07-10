@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <!-- headタグの中にはメタデータ等を記載する -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Document</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+
+<body>
+    <!-- bodyタグの中には実際に表示するものなどを書く -->
+    <img src="./image/logo.png" alt="logo" width="227" height="100">
+    <!-- 現在の単語を表示する場所 -->
+    <div class="game-area">
+        <div id="historyContainer"></div>
+
+        <div id="current-circle-container">
+            <div id="target-char-display">り</div>
+        </div>
+    </div>
+
+    <div class="input-area">
+        <p id="turnIndicator">自分のターン</p>
+        <!-- 次の文字を入力するフォーム -->
+        <div class="form">
+            <input id="nextWordInput" type="text" />
+            <button id="nextWordSendButton"></button>
+        </div>
+    </div>
+    <!-- JavaScriptを実行 -->
+
+    <script>
+        // 1. 現在のURLのパラメータから "room" の値を引き抜く
+        const urlParams = new URLSearchParams(window.location.search);
+        const roomName = urlParams.get("room");
+
+        if (!roomName) {
+            // 部屋名が直接打たれるなどして存在しない場合はタイトルに戻す防衛策
+            alert("部屋名が指定されていません。タイトルに戻ります。");
+            window.location.href = "./index.html";
+        }
+
+        // 部屋名をクエリパラメータに仕込んでWebSocket接続を開始
+        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+        const wsUrl = `${protocol}//${window.location.host}/shiritori-ws?room=${encodeURIComponent(roomName)}`;
+        const socket = new WebSocket(wsUrl);
+
+        const nextWordInput = document.querySelector("#nextWordInput");
+
+        // サーバーからメッセージ（JSON）が届いたときの処理
+        socket.onmessage = async (event) => {
+            const data = JSON.parse(event.data);
+
+            const historyContainer = document.querySelector("#historyContainer");
+            const currentCircle = document.querySelector("#currentCircle");
+            const turnIndicator = document.querySelector("#turnIndicator");
+            const sendButton = document.querySelector("#nextWordSendButton");
+
+            //しりとり接続チェックはじかれたときのアラート
+            if (data.type === "input_error") {
+                alert(data.message);
+                nextWordInput.value = "";
+                nextWordInput.focus(); //cursorを合わせる
+                return;
+            }
+            //ゲームオーバーの場合
+            else if (data.type === "gameover") {
+                const msg = encodeURIComponent(data.errorMessage);
+                const count = data.wordCount;
+                if (data.role === "spectator") {
+                    window.location.href = `win.html?msg=${encodeURIComponent("試合が終了しました！")}&count=${count}`;
+                } else {
+                    //自分が勝ったか負けたかで、遷移するファイルを分ける！
+                    if (data.result === "win") {
+                        window.location.href = `win.html?msg=${msg}&count=${count}`;
+                    } else {
+                        window.location.href = `lose.html?msg=${msg}&count=${count}`;
+                    }
+                }
+            }
+
+            //観戦者接続
+            if (data.type === "spectate_start") {
+                turnIndicator.textContent = data.message;
+                sendButton.disabled = true;     // 入力とボタンは永久ロック
+                nextWordInput.disabled = true;
+
+                // 現在のしりとり状況を表示
+                historyContainer.innerHTML = data.recentWords
+                    .map(word => `<span class="history-word">${word}</span>`)
+                    .join('<span class="arrow">➔</span>');
+
+                currentCircle.textContent = data.nextChar;
+            }
+            //待機中の通知が来た場合
+            else if (data.type === "waiting") {
+                turnIndicator.textContent = data.message;
+                sendButton.disabled = true;     // ボタンをロック
+                nextWordInput.disabled = true;  // 入力欄をロック
+            }
+
+            //ゲーム開始、または通常の単語更新の場合
+            else if (data.type === "game_start" || data.type === "success") {
+                // 過去5件の履歴を表示
+                historyContainer.innerHTML = data.recentWords
+                    .map(word => `<span class="history-word">${word}</span>`)
+                    .join('<span class="arrow">➔</span>');
+
+                // 最新の1文字を丸の中に表示
+                document.getElementById("target-char-display").textContent = data.nextChar;
+                nextWordInput.value = "";
+
+                // ランダムに選ばれた手番に応じて画面を切り替える
+                if (data.role === "spectator") {
+                    turnIndicator.textContent = "観戦中";
+                    sendButton.disabled = true;
+                    nextWordInput.disabled = true;
+                } else {
+                    if (data.isYourTurn) {
+                        turnIndicator.textContent = "自分のターン";
+                        sendButton.disabled = false;
+                        nextWordInput.disabled = false;
+                    } else {
+                        turnIndicator.textContent = "相手のターン（考え中…）";
+                        sendButton.disabled = true;
+                        nextWordInput.disabled = true;
+                    }
+                }
+            }
+
+
+        };
+
+        //送信ボタンの押下時に実行
+        document.querySelector("#nextWordSendButton").onclick = () => {
+            const nextWordInputText = nextWordInput.value.trim(); // 前後の余計な空白を消す
+
+            //ひらがな・カタカナ・長音記号「だけ」の正規表現
+            const regex = /^[ぁ-んァ-ヶー]+$/;
+
+            // もし入力が空、または正規表現にマッチしなかったら弾く
+            if (!nextWordInputText) return;
+            if (!regex.test(nextWordInputText)) {
+                alert("ひらがな、またはカタカナだけで入力してください！(スペースや記号は使えません)");
+                return; // ここで処理を終了して、サーバーには送らない
+            }
+
+            // 問題なければWebSocketで送信
+            socket.send(nextWordInputText);
+        };
+
+        // 最初にページを開いたときに最新の単語を取得する処理
+        window.onload = async (event) => {
+            // GET /shiritoriを実行
+            const response = await fetch("/shiritori", { method: "GET" });
+            if (response.ok) {
+                //JSONとして受け取る
+                const data = await response.json();
+
+                const historyContainer = document.querySelector("#historyContainer");
+                const currentCircle = document.querySelector("#currentCircle");
+
+                // 過去5件の履歴を表示
+                historyContainer.innerHTML = data.recentWords
+                    .map(word => `<span class="history-word">${word}</span>`)
+                    .join('<span class="arrow">➔</span>');
+
+                // 最新の1文字を丸の中に表示
+                currentCircle.textContent = data.nextChar;
+            }
+        }
+
+    </script>
+</body>
+
+</html>

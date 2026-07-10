@@ -2,165 +2,81 @@
 <html lang="ja">
 
 <head>
-    <!-- headタグの中にはメタデータ等を記載する -->
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
-    <link rel="stylesheet" href="styles.css">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>リアルタイムしりとり対戦 - タイトル</title>
+  <style>
+    body {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      background-color: #1a1a1a;
+      color: #ffffff;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      margin: 0;
+    }
+
+    .container {
+      text-align: center;
+      background: #2a2a2a;
+      padding: 40px;
+      border-radius: 10px;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+    }
+
+    input {
+      padding: 10px;
+      font-size: 1.2rem;
+      border-radius: 5px;
+      border: none;
+      width: 250px;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    button {
+      padding: 10px 20px;
+      font-size: 1.2rem;
+      background-color: #4CAF50;
+      color: white;
+      border: none;
+      border-radius: 5px;
+      cursor: pointer;
+      transition: 0.3s;
+    }
+
+    button:hover {
+      background-color: #45a049;
+    }
+  </style>
 </head>
 
 <body>
-    <!-- bodyタグの中には実際に表示するものなどを書く -->
-    <img src="./image/logo.png" alt="logo" width="227" height="100">
-    <!-- 現在の単語を表示する場所 -->
-    <div class="game-area">
-        <div id="historyContainer"></div>
 
-        <div id="current-circle-container">
-            <div id="target-char-display">り</div>
-        </div>
-    </div>
+  <div class="container">
+    <h1>しりとりオンライン</h1>
+    <p>合言葉（部屋名）を入力して出撃せよ</p>
 
-    <div class="input-area">
-        <p id="turnIndicator">自分のターン</p>
-        <!-- 次の文字を入力するフォーム -->
-        <div class="form">
-            <input id="nextWordInput" type="text" />
-            <button id="nextWordSendButton"></button>
-        </div>
-    </div>
-    <!-- JavaScriptを実行 -->
+    <input type="text" id="room-name-input" placeholder="例: G13_ROOM" maxlength="20"><br>
+    <button id="enter-btn">参戦する</button>
+  </div>
 
-    <script>
-        //WebSocketサーバーに接続する
-        const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-        const socket = new WebSocket(`${protocol}//${window.location.host}/shiritori-ws`);
-        const nextWordInput = document.querySelector("#nextWordInput");
+  <script>
+    document.getElementById("enter-btn").addEventListener("click", () => {
+      const roomName = document.getElementById("room-name-input").value.trim();
 
-        // サーバーからメッセージ（JSON）が届いたときの処理
-        socket.onmessage = async (event) => {
-            const data = JSON.parse(event.data);
+      if (!roomName) {
+        alert("部屋名を入力してください！");
+        return;
+      }
 
-            const historyContainer = document.querySelector("#historyContainer");
-            const currentCircle = document.querySelector("#currentCircle");
-            const turnIndicator = document.querySelector("#turnIndicator");
-            const sendButton = document.querySelector("#nextWordSendButton");
+      // ⭕ 【最重要】URLパラメータに部屋名をくっつけてゲーム画面にジャンプ！
+      // 例: play.html?room=G13_ROOM
+      window.location.href = `./play.html?room=${encodeURIComponent(roomName)}`;
+    });
+  </script>
 
-            //しりとり接続チェックはじかれたときのアラート
-            if (data.type === "input_error") {
-                alert(data.message);
-                nextWordInput.value = "";
-                nextWordInput.focus(); //cursorを合わせる
-                return;
-            }
-            //ゲームオーバーの場合
-            else if (data.type === "gameover") {
-                const msg = encodeURIComponent(data.errorMessage);
-                const count = data.wordCount;
-                if (data.role === "spectator") {
-                    window.location.href = `win.html?msg=${encodeURIComponent("試合が終了しました！")}&count=${count}`;
-                } else {
-                    //自分が勝ったか負けたかで、遷移するファイルを分ける！
-                    if (data.result === "win") {
-                        window.location.href = `win.html?msg=${msg}&count=${count}`;
-                    } else {
-                        window.location.href = `lose.html?msg=${msg}&count=${count}`;
-                    }
-                }
-            }
-
-            //観戦者接続
-            if (data.type === "spectate_start") {
-                turnIndicator.textContent = data.message;
-                sendButton.disabled = true;     // 入力とボタンは永久ロック
-                nextWordInput.disabled = true;
-
-                // 現在のしりとり状況を表示
-                historyContainer.innerHTML = data.recentWords
-                    .map(word => `<span class="history-word">${word}</span>`)
-                    .join('<span class="arrow">➔</span>');
-
-                currentCircle.textContent = data.nextChar;
-            }
-            //待機中の通知が来た場合
-            else if (data.type === "waiting") {
-                turnIndicator.textContent = data.message;
-                sendButton.disabled = true;     // ボタンをロック
-                nextWordInput.disabled = true;  // 入力欄をロック
-            }
-
-            //ゲーム開始、または通常の単語更新の場合
-            else if (data.type === "game_start" || data.type === "success") {
-                // 過去5件の履歴を表示
-                historyContainer.innerHTML = data.recentWords
-                    .map(word => `<span class="history-word">${word}</span>`)
-                    .join('<span class="arrow">➔</span>');
-
-                // 最新の1文字を丸の中に表示
-                document.getElementById("target-char-display").textContent = data.nextChar;
-                nextWordInput.value = "";
-
-                // ランダムに選ばれた手番に応じて画面を切り替える
-                if (data.role === "spectator") {
-                    turnIndicator.textContent = "観戦中";
-                    sendButton.disabled = true;
-                    nextWordInput.disabled = true;
-                } else {
-                    if (data.isYourTurn) {
-                        turnIndicator.textContent = "自分のターン";
-                        sendButton.disabled = false;
-                        nextWordInput.disabled = false;
-                    } else {
-                        turnIndicator.textContent = "相手のターン（考え中…）";
-                        sendButton.disabled = true;
-                        nextWordInput.disabled = true;
-                    }
-                }
-            }
-
-
-        };
-
-        //送信ボタンの押下時に実行
-        document.querySelector("#nextWordSendButton").onclick = () => {
-            const nextWordInputText = nextWordInput.value.trim(); // 前後の余計な空白を消す
-
-            //ひらがな・カタカナ・長音記号「だけ」の正規表現
-            const regex = /^[ぁ-んァ-ヶー]+$/;
-
-            // もし入力が空、または正規表現にマッチしなかったら弾く
-            if (!nextWordInputText) return;
-            if (!regex.test(nextWordInputText)) {
-                alert("ひらがな、またはカタカナだけで入力してください！(スペースや記号は使えません)");
-                return; // ここで処理を終了して、サーバーには送らない
-            }
-
-            // 問題なければWebSocketで送信
-            socket.send(nextWordInputText);
-        };
-
-        // 最初にページを開いたときに最新の単語を取得する処理
-        window.onload = async (event) => {
-            // GET /shiritoriを実行
-            const response = await fetch("/shiritori", { method: "GET" });
-            if (response.ok) {
-                //JSONとして受け取る
-                const data = await response.json();
-
-                const historyContainer = document.querySelector("#historyContainer");
-                const currentCircle = document.querySelector("#currentCircle");
-
-                // 過去5件の履歴を表示
-                historyContainer.innerHTML = data.recentWords
-                    .map(word => `<span class="history-word">${word}</span>`)
-                    .join('<span class="arrow">➔</span>');
-
-                // 最新の1文字を丸の中に表示
-                currentCircle.textContent = data.nextChar;
-            }
-        }
-
-    </script>
 </body>
 
 </html>
