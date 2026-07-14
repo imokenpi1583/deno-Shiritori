@@ -3,27 +3,11 @@ import { serveDir } from "jsr:@std/http/file-server";
 
 const kv = await Deno.openKv();
 
-// クラウド環境で全サーバーが共通して使う「部屋のID」
-const url = new URL(_req.url);
-const roomName = url.searchParams.get("room") || "default"; // 部屋名を取得
-const ROOM_KEY = ["shiritori_room_data", roomName]; // その部屋専用のKVキーが誕生！
+//部屋ごとにプレイヤーと観戦者をメモリ管理する格納庫
+const rooms = {};
 
 // 対戦に必要なプレイヤー数（3人目以降は観戦者になる）
 const MAX_PLAYERS = 2;
-
-// サーバー起動時にデータベースの初期状態をセット
-const existing = await kv.get(ROOM_KEY);
-if (!existing.value) {
-    await kv.set(ROOM_KEY, {
-        wordHistory: ["しりとり"],
-        turnIndex: 0,
-        gameStarted: false,
-    });
-}
-
-// 接続中のプレイヤー・観戦者（WebSocketは保存できないため、これらはローカル変数のままでよい）
-let connectedClients = [];
-let spectators = [];
 
 const toHiragana = (str) => {
     return str.replace(/[\u30a1-\u30f6]/g, (match) => {
@@ -72,11 +56,13 @@ const getNextChar = (word) => {
     return nextChar;
 };
 
-// 全員にJSONデータを送るヘルパー関数
-function broadcast(data, roomData) {
-    connectedClients.forEach((client, index) => {
+// 全員にJSONデータを送るヘルパー関数（roomNameをしっかり受け取って処理）
+function broadcast(data, roomData, roomName) {
+    const room = rooms[roomName];
+    if (!room) return;
+
+    room.connectedClients.forEach((client, index) => {
         if (client.readyState === WebSocket.OPEN) {
-            // サーバー上部の変数ではなく、引数で受け取った最新のDBデータを基準に手番判定
             const isYourTurn = index === roomData.turnIndex;
             client.send(JSON.stringify({
                 ...data,
@@ -86,7 +72,7 @@ function broadcast(data, roomData) {
         }
     });
 
-    spectators.forEach((spectator) => {
+    room.spectators.forEach((spectator) => {
         if (spectator.readyState === WebSocket.OPEN) {
             spectator.send(JSON.stringify({
                 ...data,
@@ -102,7 +88,11 @@ function broadcastGameOver(
     loserMessage,
     winnerMessage,
     wordCount,
+    roomName,
 ) {
+    const room = rooms[roomName];
+    if (!room) return;
+
     //敗者に送信
     loserSocket.send(JSON.stringify({
         "type": "gameover",
@@ -111,8 +101,9 @@ function broadcastGameOver(
         "errorMessage": loserMessage,
         "wordCount": wordCount,
     }));
+
     //勝者に送信
-    connectedClients.forEach((client) => {
+    room.connectedClients.forEach((client) => {
         if (
             client !== loserSocket &&
             client.readyState === WebSocket.OPEN
@@ -126,8 +117,9 @@ function broadcastGameOver(
             }));
         }
     });
+
     //観戦者に送信
-    spectators.forEach((spectator) => {
+    room.spectators.forEach((spectator) => {
         if (spectator.readyState === WebSocket.OPEN) {
             spectator.send(JSON.stringify({
                 "type": "gameover",
@@ -141,26 +133,41 @@ function broadcastGameOver(
 
 // localhostにDenoのHTTPサーバーを展開
 Deno.serve(async (_req) => {
-    // URLオブジェクトの作成
     const url = new URL(_req.url);
     const pathname = url.pathname;
+    const roomName = url.searchParams.get("room") || "default"; // 部屋名を取得
+    const ROOM_KEY = ["shiritori_room_data", roomName]; // その部屋専用のKVキー
 
-    // クエリパラメータ（?room=xxx）から部屋名を取得（指定がない場合は "default" 部屋にする防衛策）
-    const roomName = url.searchParams.get("room") || "default";
+    // メモリ上に該当の部屋オブジェクトがなければ生成
+    if (!rooms[roomName]) {
+        rooms[roomName] = {
+            connectedClients: [],
+            spectators: [],
+        };
+    }
 
-    //部屋名ごとに独立したKVデータベースのキーを動的に生成！
-    const ROOM_KEY = ["shiritori_room_data", roomName];
+    const currentRoomMemory = rooms[roomName];
+
+    const existing = await kv.get(ROOM_KEY);
+    if (!existing.value) {
+        await kv.set(ROOM_KEY, {
+            wordHistory: ["しりとり"],
+            turnIndex: 0,
+            gameStarted: false,
+        });
+    }
 
     if (pathname === "/shiritori-ws") {
         const { response, socket } = Deno.upgradeWebSocket(_req);
 
         socket.onopen = async () => {
-            console.log("プレイヤー参戦！");
+            console.log(`プレイヤーが部屋 [${roomName}] に参戦！`);
             const entry = await kv.get(ROOM_KEY);
             let roomData = entry.value;
+
             // 3人目以降の接続は観戦者モード
-            if (connectedClients.length >= MAX_PLAYERS) {
-                spectators.push(socket);
+            if (currentRoomMemory.connectedClients.length >= MAX_PLAYERS) {
+                currentRoomMemory.spectators.push(socket);
 
                 const lastWord =
                     roomData.wordHistory[roomData.wordHistory.length - 1] ||
@@ -173,14 +180,15 @@ Deno.serve(async (_req) => {
                     "word": lastWord,
                     "recentWords": roomData.wordHistory.slice(-5),
                     "nextChar": initialNextChar,
-                    "message": "満員のため観戦モードで参加中",
+                    "message":
+                        `満員のため部屋 [${roomName}] を観戦モードで参加中`,
                 }));
                 return;
             }
 
-            connectedClients.push(socket);
+            currentRoomMemory.connectedClients.push(socket);
 
-            if (connectedClients.length === 1) {
+            if (currentRoomMemory.connectedClients.length === 1) {
                 roomData.gameStarted = false;
                 await kv.set(ROOM_KEY, roomData);
                 socket.send(JSON.stringify({
@@ -188,7 +196,9 @@ Deno.serve(async (_req) => {
                     "role": "player",
                     "message": "対戦相手を待っています...",
                 }));
-            } else if (connectedClients.length === MAX_PLAYERS) {
+            } else if (
+                currentRoomMemory.connectedClients.length === MAX_PLAYERS
+            ) {
                 // 定員に達したらゲーム開始！
                 roomData.gameStarted = true;
 
@@ -197,17 +207,16 @@ Deno.serve(async (_req) => {
                 await kv.set(ROOM_KEY, roomData);
 
                 console.log(
-                    `ゲーム開始！先攻プレイヤーのインデックス: ${roomData.turnIndex}`,
+                    `部屋 [${roomName}] ゲーム開始！先攻プレイヤーのインデックス: ${roomData.turnIndex}`,
                 );
 
                 const currentWord =
                     roomData.wordHistory[roomData.wordHistory.length - 1];
                 const recentWordsList = roomData.wordHistory.slice(-5);
-
                 const startNextChar = getNextChar(currentWord);
 
                 // 定員に達したので、それぞれのプレイヤーに手番を送る
-                connectedClients.forEach((client, index) => {
+                currentRoomMemory.connectedClients.forEach((client, index) => {
                     if (client.readyState === WebSocket.OPEN) {
                         const isYourTurn = index === roomData.turnIndex;
                         client.send(JSON.stringify({
@@ -222,12 +231,13 @@ Deno.serve(async (_req) => {
                 });
 
                 // 観戦者へ送信
-                spectators.forEach((spectator) => {
+                currentRoomMemory.spectators.forEach((spectator) => {
                     if (spectator.readyState === WebSocket.OPEN) {
                         spectator.send(JSON.stringify({
                             "type": "game_start",
                             "word": currentWord,
                             "recentWords": recentWordsList,
+                            "nextChar": startNextChar,
                             "isYourTurn": false,
                             "role": "spectator",
                         }));
@@ -237,25 +247,32 @@ Deno.serve(async (_req) => {
         };
 
         socket.onclose = async () => {
-            console.log("プレイヤー退場ッ！");
-            connectedClients = connectedClients.filter((client) =>
-                client !== socket
-            );
-            if (connectedClients.length < MAX_PLAYERS) {
-                if (connectedClients.length === 0) {
+            console.log(`部屋 [${roomName}] からプレイヤー退場。`);
+            currentRoomMemory.connectedClients = currentRoomMemory
+                .connectedClients.filter((client) => client !== socket);
+            currentRoomMemory.spectators = currentRoomMemory.spectators.filter((
+                client,
+            ) => client !== socket);
+
+            if (currentRoomMemory.connectedClients.length < MAX_PLAYERS) {
+                if (
+                    currentRoomMemory.connectedClients.length === 0 &&
+                    currentRoomMemory.spectators.length === 0
+                ) {
                     await kv.set(ROOM_KEY, {
                         wordHistory: ["しりとり"],
                         turnIndex: 0,
                         gameStarted: false,
                     });
+                    delete rooms[roomName]; // 誰もいない部屋のメモリを解放
                     console.log(
-                        "全員退場したためデータをリセットしました。",
+                        `全員退場したため部屋 [${roomName}] データをリセットしました。`,
                     );
                     return;
                 }
                 // もし1人残されたら、その人を再び待機状態にする
-                if (connectedClients.length === 1) {
-                    connectedClients[0].send(JSON.stringify({
+                if (currentRoomMemory.connectedClients.length === 1) {
+                    currentRoomMemory.connectedClients[0].send(JSON.stringify({
                         "type": "waiting",
                         "message":
                             "対戦相手が切断しました;;新たな相手を待っています...",
@@ -271,31 +288,20 @@ Deno.serve(async (_req) => {
             let wordHistoryFromDB = roomData.wordHistory;
 
             //手番プレイヤーからの送信かチェック
-            const currentPlayerSocket = connectedClients[roomData.turnIndex];
-            if (socket !== currentPlayerSocket) {
-                // 自分のターンじゃない奴からのメッセージは無視する
-                return;
-            }
+            const currentPlayerSocket =
+                currentRoomMemory.connectedClients[roomData.turnIndex];
+            if (socket !== currentPlayerSocket) return;
 
-            // 文字の正規化（標準化）処理
             const previousWord =
                 wordHistoryFromDB[wordHistoryFromDB.length - 1];
-
-            // 入力された単語の連続する伸ばし棒をあらかじめ破壊（圧縮）
             const cleanedNextWord = compressChouon(nextWord);
-
-            // 重複チェック用の平仮名変換（圧縮済みの単語を使用）
             const nextWordHiragana = toHiragana(cleanedNextWord);
 
-            // 過去の履歴もすべて「伸ばし棒圧縮＋ひらがな」に統一したチェック専用配列を作る
             const hiraganaHistory = wordHistoryFromDB.map((word) =>
                 toHiragana(compressChouon(word))
             );
 
-            //次に繋げるスタート文字の判定（圧縮済みの先頭文字を取る）
             const nextStart = toHiragana(cleanedNextWord.slice(0, 1));
-
-            // 直前の単語（DBの末尾）も連続伸ばし棒を破壊してから最後の文字を判定する
             const previousEnd = getNextChar(previousWord);
 
             // しりとり接続チェック
@@ -306,13 +312,14 @@ Deno.serve(async (_req) => {
                         `「${nextWord}」は「${previousEnd}」に続いていません！`,
                 }));
                 return;
-            } //重複チェック
+            } // 重複チェック（※前の要件に合わせゲームオーバーの判定にしてあります）
             else if (hiraganaHistory.includes(nextWordHiragana)) {
                 broadcastGameOver(
                     socket,
                     `「${nextWord}」はすでに使われている単語です！`,
                     `相手が「${nextWord}」という重複した単語を使いました！`,
                     wordHistoryFromDB.length,
+                    roomName, // ⭕ ルーム指定を追加
                 );
                 return;
             } // 「ん」チェック
@@ -322,6 +329,7 @@ Deno.serve(async (_req) => {
                     `末尾が「ん」で終わっています！`,
                     `相手が「ん」のつく単語を入力しました！`,
                     wordHistoryFromDB.length,
+                    roomName, // ⭕ ルーム指定を追加
                 );
                 return;
             }
@@ -333,35 +341,35 @@ Deno.serve(async (_req) => {
             roomData.turnIndex = (roomData.turnIndex + 1) % MAX_PLAYERS;
             roomData.wordHistory = wordHistoryFromDB;
 
-            //更新した最新状態をデータベースに保存（これで他のサーバーにも一瞬で同期される）
             await kv.set(ROOM_KEY, roomData);
 
             const calculatedNextChar = getNextChar(nextWord);
 
-            //正しいJSONデータ形式で全員に一斉送信
-            broadcast({
-                "type": "success",
-                "word": nextWord,
-                "recentWords": recentWords,
-                "nextChar": calculatedNextChar,
-            }, roomData);
+            // ⭕ broadcast に roomName をしっかり付与
+            broadcast(
+                {
+                    "type": "success",
+                    "word": nextWord,
+                    "recentWords": recentWords,
+                    "nextChar": calculatedNextChar,
+                },
+                roomData,
+                roomName,
+            );
         };
 
         return response;
     }
 
-    console.log(`pathname: ${pathname}`);
-
-    // GET /shiritori: 直前の単語を返す
+    // GET /shiritori: 部屋ごとの直前の単語を返す
     if (_req.method === "GET" && pathname === "/shiritori") {
         const entry = await kv.get(ROOM_KEY);
-        const roomData = entry.value;
+        const roomData = entry.value || { wordHistory: ["しりとり"] };
         const nextWord = roomData.wordHistory[roomData.wordHistory.length - 1];
-        const recentWords = roomData.wordHistory.slice(-5); // 最初も過去5件を切り出す
+        const recentWords = roomData.wordHistory.slice(-5);
 
         const initialNextChar = getNextChar(nextWord);
 
-        // WebSocketの成功時と同じ形のJSONデータを返すようにする
         return new Response(
             JSON.stringify({
                 "type": "success",
@@ -369,39 +377,34 @@ Deno.serve(async (_req) => {
                 "recentWords": recentWords,
                 "nextChar": initialNextChar,
             }),
-            {
-                headers: { "Content-Type": "application/json; charset=utf-8" },
-            },
+            { headers: { "Content-Type": "application/json; charset=utf-8" } },
         );
     }
 
     if (_req.method === "POST" && pathname === "/reset") {
-        // 履歴を最初の「しりとり」だけの状態に戻す
         await kv.set(ROOM_KEY, {
             wordHistory: ["しりとり"],
             turnIndex: 0,
             gameStarted: false,
         });
 
-        console.log("履歴がリセットされました");
-        return new Response(JSON.stringify({ "message": "リセット完了" }), {
-            status: 200,
-            headers: { "Content-Type": "application/json; charset=utf-8" },
-        });
+        if (rooms[roomName]) {
+            delete rooms[roomName];
+        }
+
+        console.log(`部屋 [${roomName}] の履歴がリセットされました`);
+        return new Response(
+            JSON.stringify({ "message": `部屋 [${roomName}] のリセット完了` }),
+            {
+                status: 200,
+                headers: { "Content-Type": "application/json; charset=utf-8" },
+            },
+        );
     }
 
-    // ./public以下のファイルを公開
-    return serveDir(
-        _req,
-        {
-            /*
-            - fsRoot: 公開するフォルダを指定
-            - urlRoot: フォルダを展開するURLを指定。今回はlocalhost:8000/に直に展開する
-            - enableCors: CORSの設定を付加するか
-            */
-            fsRoot: "./public/",
-            urlRoot: "",
-            enableCors: true,
-        },
-    );
+    return serveDir(_req, {
+        fsRoot: "./public/",
+        urlRoot: "",
+        enableCors: true,
+    });
 });

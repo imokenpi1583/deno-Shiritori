@@ -14,7 +14,11 @@
     続いた単語の数： <span id="wordCountValue" style="color: #ff4d4f; font-size: 36px;">0</span>個
   </p>
   <br>
-  <button id="resetButton">再接続</button>
+  <div class="result-buttons">
+    <button id="back-to-title-btn" onclick="window.location.href='./index.html'">タイトル画面に戻る</button>
+    <!--  追加：同じ部屋に再接続するボタン -->
+    <button id="reconnect-room-btn" style="display: none;"></button>
+  </div>
 
   <script>
     const urlParams = new URLSearchParams(window.location.search);
@@ -23,17 +27,21 @@
       document.querySelector("#message").textContent = msg;
     }
 
-    document.querySelector("#resetButton").onclick = async () => {
-      // サーバーにリセットを要求
-      const response = await fetch("/reset", { method: "POST" });
+    const prevRoomName = urlParams.get("room");
 
-      if (response.ok) {
-        // サーバー側のリセットが成功したら、メイン画面に戻る
-        window.location.href = "index.html";
-      } else {
-        alert("リセットに失敗しました");
-      }
-    };
+    if (prevRoomName) {
+      const reconnectBtn = document.getElementById("reconnect-room-btn");
+
+      // ボタンに部屋名を含んだテキストを設定して表示
+      reconnectBtn.textContent = `もう一度 部屋[${prevRoomName}] で遊ぶ`;
+      reconnectBtn.style.display = "inline-block"; // ボタンを表示する
+
+      // ボタンがクリックされたら、その部屋パラメータを持たせてゲーム画面に戻る
+      reconnectBtn.onclick = () => {
+        // しりとりゲーム画面のHTMLファイル名（例: game.html）に合わせて変更してください
+        window.location.href = `play.html?room=${encodeURIComponent(prevRoomName)}`;
+      };
+    }
     const count = urlParams.get('count');
     if (count) {
       document.querySelector("#wordCountValue").textContent = count;

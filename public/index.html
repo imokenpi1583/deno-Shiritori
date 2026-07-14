@@ -4,11 +4,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>リアルタイムしりとり対戦 - タイトル</title>
+  <title>しりとり対戦</title>
   <style>
     body {
       font-family: 'Helvetica Neue', Arial, sans-serif;
-      background-color: #1a1a1a;
+      background-color: #1a6585;
       color: #ffffff;
       display: flex;
       justify-content: center;
@@ -19,8 +19,8 @@
 
     .container {
       text-align: center;
-      background: #2a2a2a;
-      padding: 40px;
+      background: skyblue;
+      padding: 50px;
       border-radius: 10px;
       box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
     }
@@ -55,11 +55,11 @@
 <body>
 
   <div class="container">
-    <h1>しりとりオンライン</h1>
-    <p>合言葉（部屋名）を入力して出撃せよ</p>
+    <img src="./image/logo.png" alt="logo" width="454" height="200">
+    <p>↓合言葉を入力して対戦ッ↓</p>
 
-    <input type="text" id="room-name-input" placeholder="例: G13_ROOM" maxlength="20"><br>
-    <button id="enter-btn">参戦する</button>
+    <input type="text" id="room-name-input" placeholder="例: 弱火でじっくり" maxlength="20"><br>
+    <button id="enter-btn">しりとり開始</button>
   </div>
 
   <script>
@@ -71,8 +71,6 @@
         return;
       }
 
-      // ⭕ 【最重要】URLパラメータに部屋名をくっつけてゲーム画面にジャンプ！
-      // 例: play.html?room=G13_ROOM
       window.location.href = `./play.html?room=${encodeURIComponent(roomName)}`;
     });
   </script>
