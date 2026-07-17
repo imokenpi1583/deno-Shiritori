@@ -131,6 +131,24 @@ function broadcastGameOver(
     });
 }
 
+function logRoomStatus(roomName) {
+    const room = rooms[roomName];
+    if (!room) {
+        console.log(
+            `[ ROOM STATUS] 部屋 [${roomName}] は現在メモリ上に存在しません（0人）。`,
+        );
+        return;
+    }
+    const playerCount = room.connectedClients.length;
+    const spectatorCount = room.spectators.length;
+
+    console.log(`========================================`);
+    console.log(`[ ROOM STATUS] 部屋: [${roomName}]`);
+    console.log(`  プレイヤー: ${playerCount} / ${MAX_PLAYERS} 人`);
+    console.log(`  観 戦 者   : ${spectatorCount} 人`);
+    console.log(`========================================`);
+}
+
 // localhostにDenoのHTTPサーバーを展開
 Deno.serve(async (_req) => {
     const url = new URL(_req.url);
@@ -244,6 +262,7 @@ Deno.serve(async (_req) => {
                     }
                 });
             }
+            logRoomStatus(roomName);
         };
 
         socket.onclose = async () => {
@@ -253,6 +272,8 @@ Deno.serve(async (_req) => {
             currentRoomMemory.spectators = currentRoomMemory.spectators.filter((
                 client,
             ) => client !== socket);
+
+            logRoomStatus(roomName);
 
             if (currentRoomMemory.connectedClients.length < MAX_PLAYERS) {
                 if (
@@ -387,10 +408,6 @@ Deno.serve(async (_req) => {
             turnIndex: 0,
             gameStarted: false,
         });
-
-        if (rooms[roomName]) {
-            delete rooms[roomName];
-        }
 
         console.log(`部屋 [${roomName}] の履歴がリセットされました`);
         return new Response(

@@ -84,3 +84,49 @@ body {
     color: #ffffff;
     text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.6);
 }
+
+/* リザルトモーダル（ポップアップ）のスタイル */
+.modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.8);
+    z-index: 1000;
+    justify-content: center;
+    align-items: center;
+    flex-direction: column;
+    color: white;
+    text-align: center;
+}
+.modal-content {
+    background: #222;
+    padding: 30px;
+    border-radius: 10px;
+    border: 2px solid #fff;
+    max-width: 400px;
+    width: 90%;
+}
+.modal-buttons {
+    margin-top: 20px;
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+.modal-btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-weight: bold;
+}
+.btn-title {
+    background: #666;
+    color: white;
+}
+.btn-retry {
+    background: #ff4757;
+    color: white;
+}
