@@ -73,16 +73,19 @@
                     // クエリパラメータに「続いた単語の数」を乗せてリダイレクト
                     const wordCountParam = `?wordCount=${data.wordCount}`;
 
+                    const displayMsg = data.errorMessage || "ゲーム終了";
+                    const count = data.wordCount || 0;
+
                     if (data.role === "spectator") {
                         // 観戦者の場合は勝敗がないので、ひとまずロビーか観戦終了用のページへ
                         alert(`試合終了！続いた単語の数: ${data.wordCount}個`);
-                        window.location.href = `win.html?msg=${encodeURIComponent(errorM)}&count=${count}&room=${encodeURIComponent(roomName)}`;
+                        window.location.href = `win.html?msg=${encodeURIComponent(displayMsg)}&count=${count}&room=${encodeURIComponent(roomName)}`;
                     } else if (data.result === "win") {
                         // 勝利時は win.html へ
-                        window.location.href = `win.html?msg=${encodeURIComponent(msg)}&count=${count}&room=${encodeURIComponent(roomName)}`;
+                        window.location.href = `win.html?msg=${encodeURIComponent(displayMsg)}&count=${count}&room=${encodeURIComponent(roomName)}`;
                     } else {
                         // 敗北時は lose.html へ
-                        window.location.href = `lose.html?msg=${encodeURIComponent(msg)}&count=${count}&room=${encodeURIComponent(roomName)}`;
+                        window.location.href = `lose.html?msg=${encodeURIComponent(displayMsg)}&count=${count}&room=${encodeURIComponent(roomName)}`;
                     }
                     return;
                 }
