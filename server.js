@@ -6,6 +6,9 @@ const kv = await Deno.openKv();
 //部屋ごとにプレイヤーと観戦者をメモリ管理する格納庫
 const rooms = {};
 
+// ロビー接続を管理するオブジェクト
+const lobbyRooms = {};
+
 // 対戦に必要なプレイヤー数（3人目以降は観戦者になる）
 const MAX_PLAYERS = 2;
 
@@ -83,6 +86,39 @@ function broadcast(data, roomData, roomName) {
     });
 }
 
+// ロビーにいる全員に現在の人数を伝える関数
+function broadcastLobbyStatus(roomName) {
+    const clients = lobbyRooms[roomName];
+    if (!clients) return;
+
+    const message = JSON.stringify({
+        type: "lobby_status",
+        count: clients.length,
+    });
+
+    clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(message);
+        }
+    });
+}
+
+// ロビーにいる全員ゲーム開始を伝えてplay.htmlに遷移させる関数
+function broadcastLobbyStart(roomName) {
+    const clients = lobbyRooms[roomName];
+    if (!clients) return;
+
+    const message = JSON.stringify({
+        type: "start_game",
+    });
+
+    clients.forEach((client) => {
+        if (client.readyState === WebSocket.OPEN) {
+            client.send(message);
+        }
+    });
+}
+
 function broadcastGameOver(
     loserSocket,
     loserMessage,
@@ -151,39 +187,45 @@ function logRoomStatus(roomName) {
 
 // localhostにDenoのHTTPサーバーを展開
 Deno.serve(async (_req) => {
-    const url = new URL(_req.url);
-    const pathname = url.pathname;
-    const roomName = url.searchParams.get("room") || "default"; // 部屋名を取得
+    const { pathname, searchParams } = new URL(_req.url);
+    const roomName = searchParams.get("room") || "default";
     const ROOM_KEY = ["shiritori_room_data", roomName]; // その部屋専用のKVキー
 
-    // メモリ上に該当の部屋オブジェクトがなければ生成
-    if (!rooms[roomName]) {
-        rooms[roomName] = {
-            connectedClients: [],
-            spectators: [],
-        };
-    }
-
-    const currentRoomMemory = rooms[roomName];
-
-    const existing = await kv.get(ROOM_KEY);
-    if (!existing.value) {
-        await kv.set(ROOM_KEY, {
-            wordHistory: ["しりとり"],
-            turnIndex: 0,
-            gameStarted: false,
-        });
-    }
-
+    // しりとり関連のWebSocket通信が来た時の処理
     if (pathname === "/shiritori-ws") {
+        // 安全対策: WebSocketリクエストかチェック
+        if (_req.headers.get("upgrade") !== "websocket") {
+            return new Response("Upgrade header is required", { status: 400 });
+        }
+
         const { response, socket } = Deno.upgradeWebSocket(_req);
+
+        // メモリ上に該当の部屋オブジェクトがなければ生成
+        if (!rooms[roomName]) {
+            rooms[roomName] = {
+                connectedClients: [],
+                spectators: [],
+            };
+        }
+        const currentRoomMemory = rooms[roomName];
 
         socket.onopen = async () => {
             console.log(`プレイヤーが部屋 [${roomName}] に参戦！`);
+
+            // KVデータベースをチェック＆初期化
+            const existing = await kv.get(ROOM_KEY);
+            if (!existing.value) {
+                await kv.set(ROOM_KEY, {
+                    wordHistory: ["しりとり"],
+                    turnIndex: 0,
+                    gameStarted: false,
+                });
+            }
+
             const entry = await kv.get(ROOM_KEY);
             let roomData = entry.value;
 
-            // 3人目以降の接続は観戦者モード
+            // 3人目以降は観戦者モードになります。
             if (currentRoomMemory.connectedClients.length >= MAX_PLAYERS) {
                 currentRoomMemory.spectators.push(socket);
 
@@ -209,11 +251,7 @@ Deno.serve(async (_req) => {
             if (currentRoomMemory.connectedClients.length === 1) {
                 roomData.gameStarted = false;
                 await kv.set(ROOM_KEY, roomData);
-                socket.send(JSON.stringify({
-                    "type": "waiting",
-                    "role": "player",
-                    "message": "対戦相手を待っています...",
-                }));
+                console.log(`[GAME] 1人目の接続完了。2人目の接続を待機中...`);
             } else if (
                 currentRoomMemory.connectedClients.length === MAX_PLAYERS
             ) {
@@ -233,7 +271,7 @@ Deno.serve(async (_req) => {
                 const recentWordsList = roomData.wordHistory.slice(-5);
                 const startNextChar = getNextChar(currentWord);
 
-                // 定員に達したので、それぞれのプレイヤーに手番を送る
+                // 両方のプレイヤーに手番情報を送信
                 currentRoomMemory.connectedClients.forEach((client, index) => {
                     if (client.readyState === WebSocket.OPEN) {
                         const isYourTurn = index === roomData.turnIndex;
@@ -293,11 +331,27 @@ Deno.serve(async (_req) => {
                 }
                 // もし1人残されたら、その人を再び待機状態にする
                 if (currentRoomMemory.connectedClients.length === 1) {
-                    currentRoomMemory.connectedClients[0].send(JSON.stringify({
-                        "type": "waiting",
-                        "message":
-                            "対戦相手が切断しました;;新たな相手を待っています...",
-                    }));
+                    const entry = await kv.get(ROOM_KEY);
+                    if (entry.value) {
+                        const data = entry.value;
+                        data.turnIndex = 0; // 残ったプレイヤーのインデックスを0にする
+                        data.gameStarted = false;
+                        await kv.set(ROOM_KEY, data);
+                    }
+
+                    // 1人目が確実に存在することを確認してから送る
+                    const remainingPlayer =
+                        currentRoomMemory.connectedClients[0];
+                    if (
+                        remainingPlayer &&
+                        remainingPlayer.readyState === WebSocket.OPEN
+                    ) {
+                        remainingPlayer.send(JSON.stringify({
+                            "type": "waiting",
+                            "message":
+                                "対戦相手が切断しました；；新たな相手を待っています...",
+                        }));
+                    }
                 }
             }
         };
@@ -333,14 +387,14 @@ Deno.serve(async (_req) => {
                         `「${nextWord}」は「${previousEnd}」に続いていません！`,
                 }));
                 return;
-            } // 重複チェック（※前の要件に合わせゲームオーバーの判定にしてあります）
+            } // 重複チェック
             else if (hiraganaHistory.includes(nextWordHiragana)) {
                 broadcastGameOver(
                     socket,
                     `「${nextWord}」はすでに使われている単語です！`,
                     `相手が「${nextWord}」という重複した単語を使いました！`,
                     wordHistoryFromDB.length,
-                    roomName, // ⭕ ルーム指定を追加
+                    roomName,
                 );
                 return;
             } // 「ん」チェック
@@ -350,7 +404,7 @@ Deno.serve(async (_req) => {
                     `末尾が「ん」で終わっています！`,
                     `相手が「ん」のつく単語を入力しました！`,
                     wordHistoryFromDB.length,
-                    roomName, // ⭕ ルーム指定を追加
+                    roomName,
                 );
                 return;
             }
@@ -366,7 +420,6 @@ Deno.serve(async (_req) => {
 
             const calculatedNextChar = getNextChar(nextWord);
 
-            // ⭕ broadcast に roomName をしっかり付与
             broadcast(
                 {
                     "type": "success",
@@ -377,6 +430,75 @@ Deno.serve(async (_req) => {
                 roomData,
                 roomName,
             );
+        };
+
+        return response;
+    }
+
+    // ロビー用WebSocketのエンドポイント
+    if (pathname === "/lobby-ws") {
+        const { socket, response } = Deno.upgradeWebSocket(_req);
+
+        socket.onopen = async () => {
+            const roomMemory = rooms[roomName];
+            const entry = await kv.get(ROOM_KEY);
+            const roomData = entry.value;
+
+            if (roomMemory && roomData && roomData.gameStarted) {
+                console.log(
+                    `[LOBBY] 部屋 [${roomName}] は既にゲーム中のため、直接プレイ画面（観戦）へ誘導します。`,
+                );
+                // クライアントへ直接ゲーム画面（play.html）へ進むよう指示を送る
+                socket.send(JSON.stringify({
+                    type: "start_game",
+                }));
+                socket.close();
+                return;
+            }
+
+            if (!lobbyRooms[roomName]) {
+                lobbyRooms[roomName] = [];
+            }
+
+            // 接続してきたクライアントをロビーの配列に追加
+            lobbyRooms[roomName].push(socket);
+            console.log(
+                `[LOBBY] 部屋 [${roomName}] に誰かが入室しました。現在: ${
+                    lobbyRooms[roomName].length
+                }人`,
+            );
+
+            // ロビーにいる全員に現在の人数を送信
+            broadcastLobbyStatus(roomName);
+
+            // 2人揃ったら、即座に全員をplay.htmlへ遷移させる指示を出す
+            if (lobbyRooms[roomName].length >= 2) {
+                console.log(
+                    `[LOBBY] 部屋 [${roomName}] に2人揃ったため、ゲームスタート指示を送ります。`,
+                );
+                broadcastLobbyStart(roomName);
+            }
+        };
+
+        socket.onclose = async () => {
+            if (lobbyRooms[roomName]) {
+                // 退場したソケットを除外
+                lobbyRooms[roomName] = lobbyRooms[roomName].filter((client) =>
+                    client !== socket
+                );
+                console.log(
+                    `[LOBBY] 部屋 [${roomName}] から誰かが退場しました。現在: ${
+                        lobbyRooms[roomName].length
+                    }人`,
+                );
+
+                broadcastLobbyStatus(roomName);
+
+                // 誰もいなくなったらメモリ解放
+                if (lobbyRooms[roomName].length === 0) {
+                    delete lobbyRooms[roomName];
+                }
+            }
         };
 
         return response;
@@ -419,6 +541,7 @@ Deno.serve(async (_req) => {
         );
     }
 
+    // 静的ファイルの返却
     return serveDir(_req, {
         fsRoot: "./public/",
         urlRoot: "",

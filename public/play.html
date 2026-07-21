@@ -2,98 +2,15 @@
 <html lang="ja">
 
 <head>
-    <!-- headタグの中にはメタデータ等を記載する -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Document</title>
+    <title>しりとりバトル</title>
     <link rel="stylesheet" href="styles.css">
-    <style>
-        /* 🌟 リザルトモーダル（画面全体を覆う黒い背景） */
-        .modal-overlay {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100vw;
-            height: 100vh;
-            background: rgba(0, 0, 0, 0.75);
-            /* 背景を75%の濃さの黒にしてゲーム画面を透過 */
-            z-index: 9999;
-            /* 他の要素より絶対に手前に表示 */
-            display: flex;
-            justify-content: center;
-            align-items: center;
-        }
-
-        /* 🌟 モーダルの中身（中央に浮かび上がる白いボックス） */
-        .modal-content {
-            background: #1a1a1a;
-            /* 落ち着いたダーク背景 */
-            padding: 40px;
-            border-radius: 15px;
-            border: 3px solid #ff4757;
-            /* 枠線を赤系にして目立たせる */
-            width: 85%;
-            max-width: 500px;
-            /* 横幅を大きく調整 */
-            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-            /* 影をつけて立体感を出す */
-            text-align: center;
-            color: white;
-        }
-
-        /* 文字のサイズ調整 */
-        #resultTitle {
-            font-size: 2rem;
-            margin-bottom: 20px;
-            font-weight: bold;
-        }
-
-        #resultMessage {
-            font-size: 1.2rem;
-            margin-bottom: 15px;
-        }
-
-        #resultCount {
-            font-size: 1.1rem;
-            color: #cccccc;
-            margin-bottom: 25px;
-        }
-
-        .modal-buttons {
-            display: flex;
-            gap: 15px;
-            justify-content: center;
-        }
-
-        .modal-btn {
-            padding: 12px 25px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: bold;
-            font-size: 1rem;
-            transition: transform 0.1s;
-        }
-
-        .modal-btn:active {
-            transform: scale(0.95);
-        }
-
-        .btn-title {
-            background: #444;
-            color: white;
-        }
-
-        .btn-retry {
-            background: #ff4757;
-            color: white;
-        }
-    </style>
 </head>
 
 <body>
-    <!-- bodyタグの中には実際に表示するものなどを書く -->
     <img src="./image/logo.png" alt="logo" width="227" height="100">
+
     <!-- 現在の単語を表示する場所 -->
     <div class="game-area">
         <div id="historyContainer"></div>
@@ -104,27 +21,14 @@
     </div>
 
     <div class="input-area">
-        <p id="turnIndicator">自分のターン</p>
+        <p id="turnIndicator">接続中...</p>
         <!-- 次の文字を入力するフォーム -->
         <div class="form">
-            <input id="nextWordInput" type="text" />
-            <button id="nextWordSendButton"></button>
+            <input id="nextWordInput" type="text" disabled />
+            <button id="nextWordSendButton" disabled>送信</button>
         </div>
     </div>
 
-    <div id="resultModal" class="model-overlay" style="display: none;">
-        <div class="model-content">
-            <h2 id="resultTitle">GAME OVER</h2>
-            <p id="resultMessage"></p>
-            <p id="resultCount"></p>
-            <div class="modal-buttons">
-                <button class="modal-btn btn-title" onclick="window.location.href='./index.html'">タイトルに戻る</button>
-                <button id="retryButton" class="modal-btn btn-retry">もう一度遊ぶ</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- JavaScriptを実行 -->
 
     <script>
         // 1. 現在のURLのパラメータから "room" の値を引き抜く
@@ -132,10 +36,16 @@
         const roomName = urlParams.get("room");
 
         if (!roomName) {
-            // 部屋名が直接打たれるなどして存在しない場合はタイトルに戻す
-            alert("部屋名が指定されていません。タイトルに戻ります。");
-            window.location.href = "./index.html";
+            alert("部屋名が指定されていません。ロビーに戻ります。");
+            window.location.href = "./lobby.html";
         }
+
+        // DOM要素のキャッシュ
+        const historyContainer = document.querySelector("#historyContainer");
+        const turnIndicator = document.querySelector("#turnIndicator");
+        const sendButton = document.querySelector("#nextWordSendButton");
+        const nextWordInput = document.querySelector("#nextWordInput");
+        const targetCharDisplay = document.getElementById("target-char-display");
 
         // 部屋名をクエリパラメータに仕込んでWebSocket接続を開始
         const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
@@ -145,82 +55,67 @@
         function connect() {
             socket = new WebSocket(wsUrl);
 
-            // サーバーからメッセージ（JSON）が届いたときの処理
             socket.onmessage = async (event) => {
                 const data = JSON.parse(event.data);
 
-                const historyContainer = document.querySelector("#historyContainer");
-                const turnIndicator = document.querySelector("#turnIndicator");
-                const sendButton = document.querySelector("#nextWordSendButton");
-                const nextWordInput = document.querySelector("#nextWordInput");
-
-                //しりとり接続チェックはじかれたときのアラート
+                // しりとり接続チェックにはじかれたときのアラート
                 if (data.type === "input_error") {
                     alert(data.message);
                     nextWordInput.value = "";
-                    nextWordInput.focus(); //cursorを合わせる
+                    nextWordInput.focus();
                     return;
                 }
-                //ゲームオーバーの場合
-                else if (data.type === "gameover") {
-                    const modal = document.getElementById("resultModal");
-                    const resultTitle = document.getElementById("resultTitle");
-                    const resultMessage = document.getElementById("resultMessage");
-                    const resultCount = document.getElementById("resultCount");
 
-                    resultMessage.textContent = data.errorMessage;
-                    resultCount.textContent = `続いた単語の数: ${data.wordCount}個`;
+                else if (data.type === "gameover") {
+                    // WebSocketを安全に閉じる
+                    if (socket) socket.close();
+
+                    // クエリパラメータに「続いた単語の数」を乗せてリダイレクト
+                    const wordCountParam = `?wordCount=${data.wordCount}`;
 
                     if (data.role === "spectator") {
-                        resultTitle.textContent = "試合終了";
-                        resultTitle.style.color = "#ffeb3b";
+                        // 観戦者の場合は勝敗がないので、ひとまずロビーか観戦終了用のページへ
+                        alert(`試合終了！続いた単語の数: ${data.wordCount}個`);
+                        window.location.href = `win.html?msg=${encodeURIComponent(errorM)}&count=${count}&room=${encodeURIComponent(roomName)}`;
                     } else if (data.result === "win") {
-                        resultTitle.textContent = "勝ち！";
-                        resultTitle.style.color = "#4caf50";
+                        // 勝利時は win.html へ
+                        window.location.href = `win.html?msg=${encodeURIComponent(msg)}&count=${count}&room=${encodeURIComponent(roomName)}`;
                     } else {
-                        resultTitle.textContent = "負け...";
-                        resultTitle.style.color = "#f44336";
+                        // 敗北時は lose.html へ
+                        window.location.href = `lose.html?msg=${encodeURIComponent(msg)}&count=${count}&room=${encodeURIComponent(roomName)}`;
                     }
-
-                    // モーダルを表示
-                    modal.style.display = "flex";
                     return;
                 }
 
-                //観戦者接続
+                // 観戦者接続
                 if (data.type === "spectate_start") {
                     turnIndicator.textContent = data.message;
-                    sendButton.disabled = true;     // 入力とボタンは永久ロック
+                    sendButton.disabled = true;
                     nextWordInput.disabled = true;
 
-                    // 現在のしりとり状況を表示
                     historyContainer.innerHTML = data.recentWords
                         .map(word => `<span class="history-word">${word}</span>`)
                         .join('<span class="arrow">➔</span>');
 
-                    document.getElementById("target-char-display").textContent = data.nextChar;
+                    targetCharDisplay.textContent = data.nextChar;
                 }
-                //待機中の通知が来た場合
+
+                // 待機中の通知が来た場合
                 else if (data.type === "waiting") {
                     turnIndicator.textContent = data.message;
-                    sendButton.disabled = true;     // ボタンをロック
-                    nextWordInput.disabled = true;  // 入力欄をロック
+                    sendButton.disabled = true;
+                    nextWordInput.disabled = true;
                 }
 
-                //ゲーム開始、または通常の単語更新の場合
+                // ゲーム開始、または通常の単語更新の場合
                 else if (data.type === "game_start" || data.type === "success") {
-
-                    document.getElementById("resultModal").style.display = "none";
-                    // 過去5件の履歴を表示
                     historyContainer.innerHTML = data.recentWords
                         .map(word => `<span class="history-word">${word}</span>`)
                         .join('<span class="arrow">➔</span>');
 
-                    // 最新の1文字を丸の中に表示
-                    document.getElementById("target-char-display").textContent = data.nextChar;
+                    targetCharDisplay.textContent = data.nextChar;
                     nextWordInput.value = "";
 
-                    // ランダムに選ばれた手番に応じて画面を切り替える
                     if (data.role === "spectator") {
                         turnIndicator.textContent = "観戦中";
                         sendButton.disabled = true;
@@ -230,6 +125,7 @@
                             turnIndicator.textContent = "自分のターン";
                             sendButton.disabled = false;
                             nextWordInput.disabled = false;
+                            nextWordInput.focus();
                         } else {
                             turnIndicator.textContent = "相手のターン（考え中…）";
                             sendButton.disabled = true;
@@ -238,74 +134,53 @@
                     }
                 }
             };
+
+            socket.onclose = () => {
+                console.log("WebSocket接続が閉じられました。");
+            };
         }
 
-        //送信ボタンの押下時に実行
-        document.querySelector("#nextWordSendButton").onclick = () => {
-            const nextWordInputText = nextWordInput.value.trim(); // 前後の余計な空白を消す
-
-            //ひらがな・カタカナ・長音記号「だけ」の正規表現
+        // 送信ボタンの押下時
+        sendButton.onclick = () => {
+            const nextWordInputText = nextWordInput.value.trim();
             const regex = /^[ぁ-んァ-ヶー]+$/;
 
-            // もし入力が空、または正規表現にマッチしなかったら弾く
             if (!nextWordInputText) return;
             if (!regex.test(nextWordInputText)) {
-                alert("ひらがな、またはカタカナだけで入力してください！(スペースや記号は使えません)");
-                return; // ここで処理を終了して、サーバーには送らない
+                alert("ひらがな、またはカタカナだけで入力してください！");
+                return;
             }
 
-            // 問題なければWebSocketで送信
             socket.send(nextWordInputText);
         };
 
-        document.getElementById("retryButton").onclick = async () => {
-            // 一度現在の古いWebSocketを切断
-            if (socket) {
-                socket.onclose = null;
-                socket.onmessage = null;
-                socket.close();
+        // エンターキーでも送信できるようにサポート
+        nextWordInput.onkeydown = (event) => {
+            if (event.key === "Enter" && !sendButton.disabled) {
+                sendButton.click();
             }
-            // サーバー側の該当部屋のDBデータを安全に初期化
-            try {
-                await fetch(`/reset?room=${encodeURIComponent(roomName)}`, { method: "POST" });
-            } catch (err) {
-                console.error("リセット要請に失敗しました:", err);
-            }
-
-            document.querySelector("#historyContainer").innerHTML = "";
-            document.getElementById("target-char-display").textContent = "り";
-            document.querySelector("#nextWordInput").value = "";
-
-            // モーダルを閉じて、再接続を実行
-            document.getElementById("resultModal").style.display = "none";
-            // 「200ミリ秒（0.2秒）」だけ安全に待ってから再接続（connect）を走らせる
-            setTimeout(() => {
-                console.log("安全マージンを確保しました。再接続を開始します。");
-                connect();
-            }, 200);
         };
 
-        // 最初にページを開いたときに最新の単語を取得する処理
-        window.onload = async (event) => {
+        window.onload = async () => {
             connect();
-            // GET /shiritoriを実行
-            const response = await fetch("/shiritori", { method: "GET" });
-            if (response.ok) {
-                //JSONとして受け取る
-                const data = await response.json();
 
-                const historyContainer = document.querySelector("#historyContainer");
-
-                // 過去5件の履歴を表示
-                historyContainer.innerHTML = data.recentWords
-                    .map(word => `<span class="history-word">${word}</span>`)
-                    .join('<span class="arrow">➔</span>');
-
-                // 最新の1文字を丸の中に表示
-                document.getElementById("target-char-display").textContent = data.nextChar;
+            try {
+                const response = await fetch(`/shiritori?room=${encodeURIComponent(roomName)}`, { method: "GET" });
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.recentWords) {
+                        historyContainer.innerHTML = data.recentWords
+                            .map(word => `<span class="history-word">${word}</span>`)
+                            .join('<span class="arrow">➔</span>');
+                    }
+                    if (data.nextChar) {
+                        targetCharDisplay.textContent = data.nextChar;
+                    }
+                }
+            } catch (err) {
+                console.log("初期データ取得APIが設定されていない、またはエラー（WebSocket側で補完されます）");
             }
-        }
-
+        };
     </script>
 </body>
 

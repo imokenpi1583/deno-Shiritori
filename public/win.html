@@ -22,7 +22,7 @@
   <div class="result-buttons">
     <button id="back-to-title-btn" onclick="window.location.href='./index.html'">タイトル画面に戻る</button>
     <!--  追加：同じ部屋に再接続するボタン -->
-    <button id="reconnect-room-btn" style="display: none;"></button>
+    <button id="reconnect-room-btn" style="display: none;">同じ部屋に戻る</button>
   </div>
 
   <script>
@@ -53,7 +53,7 @@
       // ボタンがクリックされたら、その部屋パラメータを持たせてゲーム画面に戻る
       reconnectBtn.onclick = () => {
         // しりとりゲーム画面のHTMLファイル名（例: game.html）に合わせて変更してください
-        window.location.href = `play.html?room=${encodeURIComponent(prevRoomName)}`;
+        window.location.href = `lobby.html?room=${encodeURIComponent(prevRoomName)}`;
       };
     }
 

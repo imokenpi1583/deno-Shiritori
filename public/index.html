@@ -58,20 +58,26 @@
     <img src="./image/logo.png" alt="logo" width="454" height="200">
     <p>↓合言葉を入力して対戦ッ↓</p>
 
-    <input type="text" id="room-name-input" placeholder="例: 弱火でじっくり" maxlength="20"><br>
+    <input type="text" id="room-input" placeholder="例: 弱火でじっくり" maxlength="20"><br>
     <button id="enter-btn">しりとり開始</button>
   </div>
 
   <script>
     document.getElementById("enter-btn").addEventListener("click", () => {
-      const roomName = document.getElementById("room-name-input").value.trim();
+      const roomName = document.getElementById("room-input").value || "default";
 
       if (!roomName) {
         alert("部屋名を入力してください！");
         return;
       }
 
-      window.location.href = `./play.html?room=${encodeURIComponent(roomName)}`;
+      window.location.href = `lobby.html?room=${encodeURIComponent(roomName)}`;
+
+      document.getElementById("room-input").addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+          document.getElementById("enter-btn").click();
+        }
+      });
     });
   </script>
 

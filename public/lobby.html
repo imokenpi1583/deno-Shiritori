@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>待機室 - denoしりとり</title>
+  <link rel="stylesheet" href="styles.css">
+  <style>
+    body {
+      background-color: #f0f2f5;
+      text-align: center;
+      padding-top: 100px;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    .lobby-container {
+      background: white;
+      max-width: 500px;
+      margin: 0 auto;
+      padding: 40px;
+      border-radius: 12px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+
+    h1 {
+      color: #333;
+      margin-bottom: 10px;
+    }
+
+    .room-name {
+      font-size: 1.5rem;
+      color: #1890ff;
+      font-weight: bold;
+      margin-bottom: 30px;
+    }
+
+    .status-box {
+      background: #fafafa;
+      border: 2px dashed #ccc;
+      padding: 20px;
+      border-radius: 8px;
+      margin-bottom: 30px;
+    }
+
+    .player-count {
+      font-size: 2.5rem;
+      font-weight: bold;
+      color: #ff4d4f;
+      margin: 10px 0;
+    }
+
+    .loader {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #1890ff;
+      border-radius: 50%;
+      width: 30px;
+      height: 30px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+
+    @keyframes spin {
+      0% {
+        transform: rotate(0deg);
+      }
+
+      100% {
+        transform: rotate(360deg);
+      }
+    }
+
+    .btn-cancel {
+      background-color: #8c8c8c;
+      color: white;
+      border: none;
+      padding: 10px 20px;
+      font-size: 1rem;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .btn-cancel:hover {
+      background-color: #595959;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="lobby-container">
+    <h1>対戦待機室</h1>
+    <div id="roomDisplay" class="room-name">部屋: --</div>
+
+    <div class="status-box">
+      <p id="statusMessage">対戦相手を待っています...</p>
+      <div class="player-count"><span id="currentPlayers">0</span> / 2人</div>
+      <div id="loadingSpinner" class="loader"></div>
+    </div>
+
+    <button class="btn-cancel" onclick="window.location.href='./index.html'">キャンセルして戻る</button>
+  </div>
+
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomName = urlParams.get("room");
+    console.log(`lobby入室`);
+
+    if (!roomName) {
+      alert("部屋名が指定されていません。タイトルに戻ります。");
+      window.location.href = "./index.html";
+      throw new Error("No room name");
+    }
+
+    // 部屋名を表示
+    document.getElementById("roomDisplay").textContent = `部屋: [${roomName}]`;
+
+    // WebSocket（ロビー専用エンドポイント）に接続
+    const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
+    const lobbyWsUrl = `${protocol}//${window.location.host}/lobby-ws?room=${encodeURIComponent(roomName)}`;
+    const socket = new WebSocket(lobbyWsUrl);
+
+    socket.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+
+      if (data.type === "lobby_status") {
+        document.getElementById("currentPlayers").textContent = data.count;
+
+        if (data.count >= 2) {
+          document.getElementById("statusMessage").textContent = "対戦相手が見つかりました！ゲームを開始します...";
+          document.getElementById("loadingSpinner").style.borderColor = "#52c41a"; // スピナーを緑色に
+        } else {
+          document.getElementById("statusMessage").textContent = "対戦相手を待っています...";
+        }
+      }
+      //2人揃ったらサーバーからゲーム画面へ遷移の命令が届く
+      else if (data.type === "start_game") {
+        socket.close(); // ロビーの接続を閉じて移動
+        window.location.href = `play.html?room=${encodeURIComponent(roomName)}`;
+      }
+    };
+
+    socket.onclose = () => {
+      console.log("ロビーの接続が閉じられました。");
+    };
+  </script>
+</body>
+
+</html>
